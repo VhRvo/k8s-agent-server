@@ -4,11 +4,17 @@ from typing import AsyncGenerator
 logger = logging.getLogger(__name__)
 
 
-async def stream_chat(message: str) -> AsyncGenerator[str, None]:
+async def stream_chat(message: str, session_id: str) -> AsyncGenerator[str, None]:
     from k8s_agent.agent import agent
+    from k8s_agent.core.config import settings
 
     try:
-        async for response in agent.arun(input=message, stream=True):
+        async for response in agent.arun(
+            input=message,
+            session_id=session_id,
+            user_id=settings.agent_user_id,
+            stream=True,
+        ):
             if response.content:
                 yield response.content
     except Exception as e:

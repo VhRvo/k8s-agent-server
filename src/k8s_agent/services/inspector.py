@@ -7,6 +7,7 @@ from k8s_agent.models.inspection import store
 logger = logging.getLogger(__name__)
 
 _run_lock = threading.Lock()
+INSPECTOR_USER_ID = "inspector"
 
 INSPECTION_PROMPT = """请执行一次完整的集群运维巡检，按以下步骤进行：
 
@@ -29,7 +30,7 @@ def _execute(record_id: str) -> None:
         store.update(record_id, status="failed", error="已有巡检任务正在执行，请稍后再试")
         return
     try:
-        response = agent.run(input=INSPECTION_PROMPT)
+        response = agent.run(input=INSPECTION_PROMPT, user_id=INSPECTOR_USER_ID)
         content = response.content if response.content else "(无回复)"
         store.update(record_id, status="completed", response=content)
         logger.info("巡检完成 record_id=%s", record_id)

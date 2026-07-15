@@ -1,6 +1,7 @@
 from textwrap import dedent
 
 from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
 from agno.models.litellm import LiteLLM
 
 from k8s_agent.core.config import settings
@@ -39,6 +40,7 @@ INSTRUCTIONS = dedent("""\
 
 
 def build_agent() -> Agent:
+    db = SqliteDb(db_file=settings.agent_db_path)
     return Agent(
         name="K8sDiagnosisAgent",
         model=LiteLLM(
@@ -49,6 +51,10 @@ def build_agent() -> Agent:
         tools=KubernetesTools().get_tools(),
         instructions=INSTRUCTIONS,
         markdown=True,
+        db=db,
+        add_history_to_context=True,
+        store_history_messages=True,
+        num_history_messages=settings.agent_history_messages,
     )
 
 

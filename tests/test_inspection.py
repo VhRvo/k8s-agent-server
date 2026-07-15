@@ -33,3 +33,9 @@ def test_list_order_and_limit():
             store.insert(f"2026-01-0{i+1} 00:00:00", "scheduled")
         rows = store.list()
         assert len(rows) == 3
+
+
+def test_inspector_user_id_isolated():
+    from k8s_agent.services.inspector import INSPECTOR_USER_ID
+    assert INSPECTOR_USER_ID == "inspector"
+    assert INSPECTOR_USER_ID != "default"
