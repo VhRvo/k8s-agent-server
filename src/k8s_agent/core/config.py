@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     inspection_max_records: int = 50
     sqlite_path: str = "data/inspections.db"
     log_level: str = "INFO"
+    agent_db_path: str = "data/agent.db"
+    agent_user_id: str = "default"
+    agent_history_messages: int = 20
 
 
 settings = Settings()
