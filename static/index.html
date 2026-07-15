@@ -142,7 +142,7 @@ function newChat() {
   currentSessionId = (crypto.randomUUID ? crypto.randomUUID() : 'c' + Date.now());
   clearMessages();
   renderEmpty();
-  renderConvList([]);
+  loadConversations();
   input.focus();
 }
 
@@ -162,7 +162,6 @@ function renderConvList(list) {
     div.className = 'conv-item' + (c.id === currentSessionId ? ' active' : '');
     div.innerHTML = '<span class="title">' + escapeHtml(c.title) + '</span>' +
       '<button class="del" title="删除">✕</button>';
-    div.querySelector('.title').onclick = () => selectConversation(c.id);
     div.querySelector('.del').onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };
     div.onclick = () => selectConversation(c.id);
     convList.appendChild(div);
@@ -199,7 +198,7 @@ async function deleteConversation(id) {
 async function sendMsg() {
   const text = input.value.trim();
   if (!text || !currentSessionId) return;
-  const userDiv = addMsg('user', escapeHtml(text));
+  addMsg('user', escapeHtml(text));
   input.value = '';
   send.disabled = true;
   const botDiv = addMsg('bot', '<span class="typing">思考中...</span>');
@@ -269,7 +268,7 @@ function renderRecord(r) {
   if (r.status === 'completed') body = '<div class="record-body">' + renderMarkdown(r.response) + '</div>';
   else if (r.status === 'failed') body = '<div class="record-body error">' + escapeHtml(r.error) + '</div>';
   else body = '<div class="record-body typing">巡检执行中，请稍候...</div>';
-  div.innerHTML = '<div class="record-head"><span class="badge ' + sc + '">' + st + '</span><span class="ts">' + r.timestamp + '</span><span class="tag">' + (r.trigger === 'manual' ? '手动' : '定时') + '</span></div>' + body;
+  div.innerHTML = '<div class="record-head"><span class="badge ' + sc + '">' + st + '</span><span class="ts">' + escapeHtml(r.timestamp) + '</span><span class="tag">' + (r.trigger === 'manual' ? '手动' : '定时') + '</span></div>' + body;
   return div;
 }
 

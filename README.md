@@ -6,7 +6,7 @@
 
 - 对话式 K8s 诊断（多会话历史 + 流式输出 + Markdown 渲染）
 - 定时巡检（集群健康检查 + 异常 Pod 日志分析，默认每 30 分钟）
-- Web UI（对话 + 巡检历史双 Tab）
+- Web UI（侧栏多会话 + 巡检视图）
 - SQLite 持久化巡检记录
 - 15 个 kubectl 工具（get/describe/logs/top/scale/exec/health 分析等）
 

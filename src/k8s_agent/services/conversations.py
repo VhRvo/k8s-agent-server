@@ -84,7 +84,11 @@ def list_conversations() -> list[dict]:
 
 
 def get_conversation(session_id: str) -> Optional[dict]:
-    session = agent.get_session(session_id=session_id, user_id=settings.agent_user_id)
+    try:
+        session = agent.get_session(session_id=session_id, user_id=settings.agent_user_id)
+    except Exception:
+        logger.exception("获取会话失败 session_id=%s", session_id)
+        return None
     if session is None:
         return None
     return serialize_session_messages(session)
