@@ -5,7 +5,7 @@ from typing import Any, Optional
 from agno.db import SessionType
 from agno.session.agent import AgentSession
 
-from k8s_agent.agent import agent
+from k8s_agent.team import team
 from k8s_agent.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -68,8 +68,9 @@ def serialize_session_messages(session: AgentSession) -> dict:
 
 def list_conversations() -> list[dict]:
     try:
-        sessions = agent.db.get_sessions(
+        sessions = team.db.get_sessions(
             user_id=settings.agent_user_id,
+            session_type=SessionType.TEAM,
             sort_by="created_at",
             sort_order="desc",
         )
@@ -85,7 +86,7 @@ def list_conversations() -> list[dict]:
 
 def get_conversation(session_id: str) -> Optional[dict]:
     try:
-        session = agent.get_session(session_id=session_id, user_id=settings.agent_user_id)
+        session = team.get_session(session_id=session_id, user_id=settings.agent_user_id)
     except Exception:
         logger.exception("获取会话失败 session_id=%s", session_id)
         return None
@@ -96,7 +97,7 @@ def get_conversation(session_id: str) -> Optional[dict]:
 
 def delete_conversation(session_id: str) -> bool:
     try:
-        agent.db.delete_session(session_id, user_id=settings.agent_user_id)
+        team.db.delete_session(session_id, user_id=settings.agent_user_id)
         return True
     except Exception:
         logger.exception("删除会话失败 session_id=%s", session_id)
@@ -105,15 +106,15 @@ def delete_conversation(session_id: str) -> bool:
 
 def set_title_if_new(session_id: str, user_message: str) -> None:
     try:
-        session = agent.get_session(session_id=session_id, user_id=settings.agent_user_id)
+        session = team.get_session(session_id=session_id, user_id=settings.agent_user_id)
         if session is None:
             return
         title = _session_title(session)
         if title and title != "新对话":
             return
-        agent.db.rename_session(
+        team.db.rename_session(
             session_id=session_id,
-            session_type=SessionType.AGENT,
+            session_type=SessionType.TEAM,
             session_name=derive_title(user_message),
             user_id=settings.agent_user_id,
         )

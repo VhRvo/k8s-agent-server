@@ -5,11 +5,11 @@ logger = logging.getLogger(__name__)
 
 
 async def stream_chat(message: str, session_id: str) -> AsyncGenerator[str, None]:
-    from k8s_agent.agent import agent
+    from k8s_agent.team import team
     from k8s_agent.core.config import settings
 
     try:
-        async for response in agent.arun(
+        async for response in team.arun(
             input=message,
             session_id=session_id,
             user_id=settings.agent_user_id,
