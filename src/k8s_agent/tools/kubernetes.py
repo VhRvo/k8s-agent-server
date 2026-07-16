@@ -643,3 +643,28 @@ class KubernetesTools:
     def get_tools(self) -> List[Any]:
         """Return the list of tools."""
         return self.tools
+
+
+INVESTIGATOR_TOOLS = [
+    kubectl_get,
+    kubectl_describe,
+    kubectl_logs,
+    kubectl_top_nodes,
+    kubectl_top_pods,
+    kubectl_get_events,
+    kubectl_cluster_info,
+    kubectl_exec,
+]
+
+ANALYST_TOOLS = [
+    analyze_pod_health,
+    diagnose_node_issues,
+]
+
+OPERATOR_TOOLS = [
+    kubectl_apply,
+    kubectl_delete,
+    kubectl_scale,
+    kubectl_rollout_restart,
+    kubectl_rollout_status,
+]

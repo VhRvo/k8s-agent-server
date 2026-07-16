@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 _run_lock = threading.Lock()
 INSPECTOR_USER_ID = "inspector"
 
-INSPECTION_PROMPT = """请执行一次完整的集群运维巡检，按以下步骤进行：
+INSPECTION_PROMPT = """请委派团队成员执行一次完整的集群运维巡检，按以下步骤进行：
 
 1. 调用 analyze_pod_health 分析所有 Pod 的健康状况
 2. 调用 diagnose_node_issues 检查节点是否存在问题
@@ -24,13 +24,13 @@ INSPECTION_PROMPT = """请执行一次完整的集群运维巡检，按以下步
 
 
 def _execute(record_id: str) -> None:
-    from k8s_agent.agent import agent
+    from k8s_agent.team import team
 
     if not _run_lock.acquire(blocking=False):
         store.update(record_id, status="failed", error="已有巡检任务正在执行，请稍后再试")
         return
     try:
-        response = agent.run(input=INSPECTION_PROMPT, user_id=INSPECTOR_USER_ID)
+        response = team.run(input=INSPECTION_PROMPT, user_id=INSPECTOR_USER_ID)
         content = response.content if response.content else "(无回复)"
         store.update(record_id, status="completed", response=content)
         logger.info("巡检完成 record_id=%s", record_id)
