@@ -1,6 +1,6 @@
 [project]
 name = "k8s-agent-server"
-version = "0.1.0"
+version = "0.2.0"
 description = "K8s intelligent operations service based on agno + FastAPI"
 requires-python = ">=3.12"
 dependencies = [
