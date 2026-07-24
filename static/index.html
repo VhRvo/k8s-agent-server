@@ -1,324 +1,346 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>K8s 诊断助手</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; height: 100vh; display: flex; }
-  .sidebar { width: 260px; background: #1a1a2e; color: #ccc; display: flex; flex-direction: column; flex-shrink: 0; }
-  .new-chat { margin: 12px; padding: 12px; background: #4e9eff; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; text-align: left; }
-  .new-chat:hover { background: #3a8ae5; }
-  .conv-list { flex: 1; overflow-y: auto; padding: 0 8px; }
-  .conv-item { display: flex; align-items: center; padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; color: #bbb; margin-bottom: 2px; }
-  .conv-item:hover { background: #25254a; color: #fff; }
-  .conv-item.active { background: #2f2f5a; color: #fff; }
-  .conv-item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .conv-item .del { display: none; margin-left: 8px; color: #888; background: none; border: none; cursor: pointer; font-size: 14px; }
-  .conv-item:hover .del { display: block; }
-  .conv-item .del:hover { color: #ff4d4f; }
-  .sidebar-foot { padding: 12px; border-top: 1px solid #2f2f5a; }
-  .sidebar-foot button { width: 100%; padding: 10px; background: none; border: 1px solid #3a3a6a; color: #ccc; border-radius: 8px; cursor: pointer; font-size: 13px; }
-  .sidebar-foot button:hover { background: #25254a; color: #fff; }
-  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .chat-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .messages { flex: 1; overflow-y: auto; padding: 24px 16px; }
-  .messages-inner { max-width: 768px; margin: 0 auto; }
-  .empty { text-align: center; color: #999; padding: 80px 20px; }
-  .empty h2 { font-size: 22px; margin-bottom: 12px; color: #555; }
-  .empty .examples { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; max-width: 420px; margin-left: auto; margin-right: auto; }
-  .empty .examples button { padding: 12px 16px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; color: #555; font-size: 13px; text-align: left; }
-  .empty .examples button:hover { border-color: #4e9eff; color: #4e9eff; }
-  .msg { max-width: 80%; margin-bottom: 16px; padding: 12px 16px; border-radius: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
-  .user { background: #4e9eff; color: #fff; margin-left: auto; }
-  .bot { background: #fff; color: #333; border: 1px solid #e0e0e0; }
-  .bot pre, .record-body pre { background: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
-  .bot code, .record-body code { background: #2d2d2d; color: #f8f8f2; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-  .bot pre code, .record-body pre code { background: none; padding: 0; }
-  .input-bar { padding: 16px; background: #fff; border-top: 1px solid #e0e0e0; }
-  .input-inner { max-width: 768px; margin: 0 auto; display: flex; }
-  #msg-input { flex: 1; padding: 12px 16px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 14px; outline: none; }
-  #msg-input:focus { border-color: #4e9eff; }
-  #send { margin-left: 12px; padding: 12px 24px; background: #4e9eff; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
-  #send:disabled { background: #a0c4ff; cursor: not-allowed; }
-  .typing { color: #999; }
-  .inspect-view { flex: 1; display: none; flex-direction: column; overflow: hidden; }
-  .inspect-bar { display: flex; gap: 12px; padding: 16px; background: #fff; border-bottom: 1px solid #e0e0e0; }
-  .inspect-bar button { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
-  #back-chat { background: #fff; color: #333; border: 1px solid #d0d0d0; }
-  #run-inspect { background: #52c41a; color: #fff; }
-  #run-inspect:disabled { background: #b7eb8f; cursor: not-allowed; }
-  #refresh-inspect { background: #fff; color: #333; border: 1px solid #d0d0d0; }
-  #inspect-list { flex: 1; overflow-y: auto; padding: 24px; }
-  .empty-i { color: #999; text-align: center; padding: 40px; }
-  .record { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
-  .record-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; }
-  .record-head:hover { background: #fafafa; }
-  .badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-  .badge.ok { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
-  .badge.err { background: #fff2f0; color: #ff4d4f; border: 1px solid #ffccc7; }
-  .badge.run { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
-  .record-head .ts { color: #666; font-size: 13px; }
-  .record-head .tag { color: #999; font-size: 12px; margin-left: auto; }
-  .record-body { padding: 0 16px 16px; line-height: 1.7; color: #333; white-space: pre-wrap; word-break: break-word; }
-  .record-body.error { color: #ff4d4f; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#18201f">
+  <title>K8s 智能运维</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script defer src="/static/app.js"></script>
 </head>
 <body>
-<div class="sidebar">
-  <button class="new-chat" onclick="newChat()">+ 新建对话</button>
-  <div class="conv-list" id="conv-list"></div>
-  <div class="sidebar-foot">
-    <button onclick="switchView('inspect')">🛰 巡检</button>
-  </div>
-</div>
-<div class="main">
-  <div class="chat-view" id="chat-view">
-    <div class="messages" id="messages">
-      <div class="messages-inner" id="messages-inner"></div>
+  <div id="app" v-cloak>
+    <div class="app-shell">
+      <button
+        v-if="sidebarOpen"
+        class="sidebar-backdrop"
+        type="button"
+        aria-label="关闭导航"
+        @click="sidebarOpen = false"
+      ></button>
+
+      <aside class="sidebar" :class="{ open: sidebarOpen }">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">K8s</div>
+          <div>
+            <strong>智能运维</strong>
+            <span>Operations Console</span>
+          </div>
+        </div>
+
+        <button class="new-chat-button" type="button" :disabled="isStreaming" @click="newChat">
+          <app-icon name="Plus"></app-icon>
+          新建对话
+        </button>
+
+        <nav class="primary-nav" aria-label="主导航">
+          <button
+            type="button"
+            :class="{ active: activeView === 'chat' }"
+            @click="switchView('chat')"
+          >
+            <span class="nav-icon" aria-hidden="true">
+              <app-icon name="MessageSquareText"></app-icon>
+            </span>
+            对话诊断
+          </button>
+          <button
+            type="button"
+            :class="{ active: activeView === 'inspections' }"
+            @click="switchView('inspections')"
+          >
+            <span class="nav-icon" aria-hidden="true">
+              <app-icon name="ClipboardCheck"></app-icon>
+            </span>
+            集群巡检
+            <span v-if="runningInspectionCount" class="nav-count">
+              {{ runningInspectionCount }}
+            </span>
+          </button>
+        </nav>
+
+        <section class="conversation-section" aria-labelledby="conversation-title">
+          <div class="section-heading">
+            <span id="conversation-title">最近对话</span>
+            <span>{{ conversations.length }}</span>
+          </div>
+
+          <label class="conversation-search">
+            <span class="sr-only">搜索对话</span>
+            <input v-model.trim="conversationQuery" type="search" placeholder="搜索对话">
+          </label>
+
+          <div class="conversation-list">
+            <div v-if="loadingConversations" class="sidebar-state">正在加载...</div>
+            <div
+              v-else-if="!filteredConversations.length"
+              class="sidebar-state"
+            >
+              {{ conversationQuery ? '没有匹配的对话' : '暂无历史对话' }}
+            </div>
+            <div
+              v-for="conversation in filteredConversations"
+              :key="conversation.id"
+              class="conversation-item"
+              :class="{ active: conversation.id === currentSessionId }"
+            >
+              <button
+                class="conversation-open"
+                type="button"
+                :disabled="isStreaming"
+                @click="selectConversation(conversation.id)"
+              >
+                <span class="conversation-copy">
+                  <strong>{{ conversation.title || '新对话' }}</strong>
+                  <small>{{ formatConversationTime(conversation.updated_at || conversation.created_at) }}</small>
+                </span>
+              </button>
+              <button
+                class="delete-conversation"
+                type="button"
+                title="删除对话"
+                aria-label="删除对话"
+                :disabled="isStreaming"
+                @click="deleteConversation(conversation)"
+              ><app-icon name="Trash2"></app-icon></button>
+            </div>
+          </div>
+        </section>
+
+        <div class="sidebar-footer">
+          <span class="status-dot" :class="serviceStatus"></span>
+          <span>{{ serviceStatusText }}</span>
+          <button type="button" title="重新检测" aria-label="重新检测" @click="checkHealth">
+            <app-icon name="RefreshCw"></app-icon>
+          </button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="workspace-header">
+          <div class="header-leading">
+            <button
+              class="menu-button"
+              type="button"
+              aria-label="打开导航"
+              title="打开导航"
+              @click="sidebarOpen = true"
+            ><app-icon name="Menu"></app-icon></button>
+            <div>
+              <span class="header-kicker">
+                {{ activeView === 'chat' ? '对话诊断' : '集群巡检' }}
+              </span>
+              <h1>{{ pageTitle }}</h1>
+            </div>
+          </div>
+          <div class="header-status" :class="serviceStatus">
+            <span class="status-dot" :class="serviceStatus"></span>
+            {{ serviceStatusText }}
+          </div>
+        </header>
+
+        <section v-if="activeView === 'chat'" class="chat-view">
+          <div ref="messagesPanel" class="messages-panel">
+            <div class="messages-content">
+              <div v-if="loadingConversation" class="conversation-loading">
+                <span></span><span></span><span></span>
+              </div>
+
+              <div v-else-if="!messages.length" class="empty-chat">
+                <div class="empty-mark" aria-hidden="true">
+                  <span></span><span></span><span></span>
+                  <strong>K8s</strong>
+                </div>
+                <p class="empty-label">Kubernetes Agent</p>
+                <h2>今天要诊断什么？</h2>
+                <div class="suggestion-grid">
+                  <button
+                    v-for="suggestion in suggestions"
+                    :key="suggestion.title"
+                    type="button"
+                    @click="useSuggestion(suggestion.prompt)"
+                  >
+                    <span>{{ suggestion.label }}</span>
+                    <strong>{{ suggestion.title }}</strong>
+                    <small>{{ suggestion.detail }}</small>
+                  </button>
+                </div>
+              </div>
+
+              <div v-else class="message-list" aria-live="polite">
+                <article
+                  v-for="message in messages"
+                  :key="message.id"
+                  class="message-row"
+                  :class="message.role"
+                >
+                  <div class="message-avatar" aria-hidden="true">
+                    {{ message.role === 'user' ? '你' : 'AI' }}
+                  </div>
+                  <div class="message-body">
+                    <div class="message-meta">
+                      <strong>{{ message.role === 'user' ? '你' : 'K8s Agent' }}</strong>
+                      <span>{{ message.time }}</span>
+                    </div>
+                    <div
+                      v-if="message.role === 'user'"
+                      class="message-text"
+                      v-text="message.content"
+                    ></div>
+                    <div
+                      v-else-if="message.pending && !message.content"
+                      class="thinking"
+                      aria-label="正在生成回复"
+                    >
+                      <span></span><span></span><span></span>
+                    </div>
+                    <div
+                      v-else
+                      class="markdown"
+                      :class="{ error: message.error }"
+                      v-html="renderMarkdown(message.content)"
+                    ></div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer-area">
+            <form class="composer" @submit.prevent="sendMessage">
+              <textarea
+                ref="messageInput"
+                v-model="draft"
+                rows="1"
+                maxlength="4000"
+                placeholder="向 K8s Agent 提问..."
+                aria-label="消息"
+                :disabled="isStreaming"
+                @keydown="handleComposerKeydown"
+              ></textarea>
+              <button
+                class="send-button"
+                type="submit"
+                :disabled="!canSend"
+                :title="isStreaming ? '正在生成回复' : '发送'"
+                aria-label="发送消息"
+              >
+                <span v-if="isStreaming" class="button-spinner"></span>
+                <app-icon v-else name="ArrowUp"></app-icon>
+              </button>
+            </form>
+            <div class="composer-footer">
+              <span>{{ isStreaming ? 'Agent 正在分析' : '就绪' }}</span>
+              <span>{{ draft.length }} / 4000</span>
+            </div>
+          </div>
+        </section>
+
+        <section v-else class="inspection-view">
+          <div class="inspection-toolbar">
+            <div class="inspection-summary">
+              <div>
+                <span>巡检总数</span>
+                <strong>{{ inspectionStats.total }}</strong>
+              </div>
+              <div>
+                <span>正常完成</span>
+                <strong class="success-text">{{ inspectionStats.completed }}</strong>
+              </div>
+              <div>
+                <span>执行失败</span>
+                <strong class="danger-text">{{ inspectionStats.failed }}</strong>
+              </div>
+              <div>
+                <span>执行中</span>
+                <strong class="info-text">{{ inspectionStats.running }}</strong>
+              </div>
+            </div>
+            <div class="inspection-actions">
+              <button
+                class="secondary-button icon-button"
+                type="button"
+                title="刷新巡检记录"
+                aria-label="刷新巡检记录"
+                :disabled="loadingInspections"
+                @click="loadInspections"
+              ><app-icon name="RefreshCw"></app-icon></button>
+              <button
+                class="primary-button"
+                type="button"
+                :disabled="startingInspection || runningInspectionCount > 0"
+                @click="runInspection"
+              >
+                <app-icon name="Play"></app-icon>
+                {{ startingInspection ? '正在启动' : '立即巡检' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="inspection-content">
+            <div v-if="loadingInspections && !inspections.length" class="inspection-empty">
+              正在加载巡检记录...
+            </div>
+            <div v-else-if="!inspections.length" class="inspection-empty">
+              <strong>暂无巡检记录</strong>
+              <span>启动首次巡检后，结果会显示在这里。</span>
+            </div>
+            <div v-else class="inspection-list">
+              <article
+                v-for="record in inspections"
+                :key="record.id"
+                class="inspection-record"
+                :class="{ expanded: expandedInspectionId === record.id }"
+              >
+                <button
+                  class="inspection-record-header"
+                  type="button"
+                  :aria-expanded="expandedInspectionId === record.id"
+                  @click="toggleInspection(record.id)"
+                >
+                  <span class="inspection-status" :class="record.status">
+                    <span class="status-dot" :class="inspectionStatusClass(record.status)"></span>
+                    {{ inspectionStatusText(record.status) }}
+                  </span>
+                  <span class="inspection-title">
+                    <strong>集群健康巡检</strong>
+                    <small>{{ formatDateTime(record.timestamp) }}</small>
+                  </span>
+                  <span class="inspection-trigger">
+                    {{ record.trigger === 'manual' ? '手动触发' : '定时任务' }}
+                  </span>
+                  <span class="inspection-toggle" aria-hidden="true">
+                    <app-icon
+                      :name="expandedInspectionId === record.id ? 'ChevronUp' : 'ChevronDown'"
+                    ></app-icon>
+                  </span>
+                </button>
+                <div v-if="expandedInspectionId === record.id" class="inspection-result">
+                  <div v-if="record.status === 'running'" class="inspection-running">
+                    <span class="button-spinner"></span>
+                    Agent 正在执行集群巡检
+                  </div>
+                  <div
+                    v-else
+                    class="markdown"
+                    :class="{ error: record.status === 'failed' }"
+                    v-html="renderMarkdown(record.status === 'failed' ? record.error : record.response)"
+                  ></div>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
-    <div class="input-bar">
-      <div class="input-inner">
-        <input id="msg-input" placeholder="输入消息，如：检查集群健康状况..." autocomplete="off">
-        <button id="send">发送</button>
-      </div>
+
+    <div v-if="toast.message" class="toast" :class="toast.type" role="status">
+      {{ toast.message }}
     </div>
   </div>
-  <div class="inspect-view" id="inspect-view">
-    <div class="inspect-bar">
-      <button id="back-chat" onclick="switchView('chat')">← 返回对话</button>
-      <button id="run-inspect">🔍 立即巡检</button>
-      <button id="refresh-inspect">刷新</button>
-    </div>
-    <div id="inspect-list"></div>
-  </div>
-</div>
 
-<script>
-const messagesInner = document.getElementById('messages-inner');
-const messagesBox = document.getElementById('messages');
-const input = document.getElementById('msg-input');
-const send = document.getElementById('send');
-const convList = document.getElementById('conv-list');
-
-let currentSessionId = null;
-
-function escapeHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-function renderMarkdown(text) {
-  let s = escapeHtml(text);
-  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  return s;
-}
-function addMsg(role, text) {
-  const div = document.createElement('div');
-  div.className = 'msg ' + role;
-  div.innerHTML = text;
-  messagesInner.appendChild(div);
-  messagesBox.scrollTop = messagesBox.scrollHeight;
-  return div;
-}
-function renderEmpty() {
-  messagesInner.innerHTML = '<div class="empty"><h2>K8s 诊断助手</h2><p>输入问题开始诊断，或试试：</p>' +
-    '<div class="examples">' +
-    '<button onclick="useExample(this.textContent)">检查集群整体健康状况</button>' +
-    '<button onclick="useExample(this.textContent)">分析异常 Pod 的日志</button>' +
-    '<button onclick="useExample(this.textContent)">查看节点资源使用情况</button>' +
-    '</div></div>';
-}
-function useExample(text) {
-  input.value = text;
-  input.focus();
-}
-function clearMessages() {
-  messagesInner.innerHTML = '';
-}
-
-function newChat() {
-  currentSessionId = (crypto.randomUUID ? crypto.randomUUID() : 'c' + Date.now());
-  clearMessages();
-  renderEmpty();
-  loadConversations();
-  input.focus();
-}
-
-async function loadConversations() {
-  try {
-    const resp = await fetch('/api/conversations');
-    const data = await resp.json();
-    renderConvList(data.conversations || []);
-  } catch (e) {
-    renderConvList([]);
-  }
-}
-function renderConvList(list) {
-  convList.innerHTML = '';
-  list.forEach(c => {
-    const div = document.createElement('div');
-    div.className = 'conv-item' + (c.id === currentSessionId ? ' active' : '');
-    div.innerHTML = '<span class="title">' + escapeHtml(c.title) + '</span>' +
-      '<button class="del" title="删除">✕</button>';
-    div.querySelector('.del').onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };
-    div.onclick = () => selectConversation(c.id);
-    convList.appendChild(div);
-  });
-}
-
-async function selectConversation(id) {
-  currentSessionId = id;
-  clearMessages();
-  try {
-    const resp = await fetch('/api/conversations/' + id);
-    const data = await resp.json();
-    (data.messages || []).forEach(m => {
-      const role = m.role === 'user' ? 'user' : 'bot';
-      addMsg(role, m.role === 'user' ? escapeHtml(m.content) : renderMarkdown(m.content));
-    });
-    if ((data.messages || []).length === 0) renderEmpty();
-  } catch (e) {
-    renderEmpty();
-  }
-  loadConversations();
-  input.focus();
-}
-
-async function deleteConversation(id) {
-  if (!confirm('删除该会话？')) return;
-  try {
-    await fetch('/api/conversations/' + id, { method: 'DELETE' });
-  } catch (e) {}
-  if (id === currentSessionId) newChat();
-  else loadConversations();
-}
-
-async function sendMsg() {
-  const text = input.value.trim();
-  if (!text || !currentSessionId) return;
-  addMsg('user', escapeHtml(text));
-  input.value = '';
-  send.disabled = true;
-  const botDiv = addMsg('bot', '<span class="typing">思考中...</span>');
-  let raw = '';
-  try {
-    const resp = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, session_id: currentSessionId })
-    });
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let firstChunk = true;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6);
-        if (data === '[DONE]') continue;
-        try {
-          const obj = JSON.parse(data);
-          if (obj.error) {
-            botDiv.innerHTML = '<span style="color:red">错误: ' + escapeHtml(obj.error) + '</span>';
-            continue;
-          }
-          if (obj.content) {
-            if (firstChunk) { botDiv.innerHTML = ''; firstChunk = false; }
-            raw += obj.content;
-            botDiv.innerHTML = renderMarkdown(raw);
-            messagesBox.scrollTop = messagesBox.scrollHeight;
-          }
-        } catch (e) {}
-      }
-    }
-    if (firstChunk) botDiv.innerHTML = '<span class="typing">(无回复内容)</span>';
-  } catch (e) {
-    botDiv.innerHTML = '<span style="color:red">请求失败: ' + escapeHtml(e.message) + '</span>';
-  }
-  send.disabled = false;
-  loadConversations();
-  input.focus();
-}
-
-send.addEventListener('click', sendMsg);
-input.addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
-
-function switchView(view) {
-  document.getElementById('chat-view').style.display = view === 'chat' ? 'flex' : 'none';
-  document.getElementById('inspect-view').style.display = view === 'inspect' ? 'flex' : 'none';
-  if (view === 'inspect') loadInspections();
-}
-
-const inspectList = document.getElementById('inspect-list');
-const runBtn = document.getElementById('run-inspect');
-
-function renderRecord(r) {
-  const div = document.createElement('div');
-  div.className = 'record';
-  const sc = r.status === 'completed' ? 'ok' : r.status === 'failed' ? 'err' : 'run';
-  const st = {running:'执行中', completed:'已完成', failed:'失败'}[r.status];
-  let body = '';
-  if (r.status === 'completed') body = '<div class="record-body">' + renderMarkdown(r.response) + '</div>';
-  else if (r.status === 'failed') body = '<div class="record-body error">' + escapeHtml(r.error) + '</div>';
-  else body = '<div class="record-body typing">巡检执行中，请稍候...</div>';
-  div.innerHTML = '<div class="record-head"><span class="badge ' + sc + '">' + st + '</span><span class="ts">' + escapeHtml(r.timestamp) + '</span><span class="tag">' + (r.trigger === 'manual' ? '手动' : '定时') + '</span></div>' + body;
-  return div;
-}
-
-async function loadInspections() {
-  try {
-    const resp = await fetch('/api/inspections');
-    const data = await resp.json();
-    inspectList.innerHTML = '';
-    if (!data.records || data.records.length === 0) {
-      inspectList.innerHTML = '<p class="empty-i">暂无巡检记录，点击"立即巡检"开始</p>';
-      return;
-    }
-    data.records.forEach(r => inspectList.appendChild(renderRecord(r)));
-  } catch (e) {
-    inspectList.innerHTML = '<p class="empty-i">加载失败: ' + escapeHtml(e.message) + '</p>';
-  }
-}
-
-async function runInspect() {
-  runBtn.disabled = true;
-  runBtn.textContent = '巡检中...';
-  try {
-    const resp = await fetch('/api/inspect', { method: 'POST' });
-    const r = await resp.json();
-    pollInspection(r.id);
-  } catch (e) {
-    alert('触发失败: ' + e.message);
-  }
-  runBtn.disabled = false;
-  runBtn.innerHTML = '🔍 立即巡检';
-}
-
-function pollInspection(id) {
-  loadInspections();
-  const iv = setInterval(async () => {
-    await loadInspections();
-    try {
-      const resp = await fetch('/api/inspections/' + id);
-      const r = await resp.json();
-      if (r.status && r.status !== 'running') clearInterval(iv);
-    } catch (e) {}
-  }, 5000);
-}
-
-runBtn.addEventListener('click', runInspect);
-document.getElementById('refresh-inspect').addEventListener('click', loadInspections);
-
-newChat();
-loadConversations();
-input.focus();
-</script>
+  <noscript>该页面需要启用 JavaScript。</noscript>
 </body>
 </html>

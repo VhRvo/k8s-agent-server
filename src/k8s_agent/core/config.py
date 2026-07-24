@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     litellm_api_key: str = "sk-xxx"
     server_host: str = "0.0.0.0"
     server_port: int = 7777
+    upstream_api_base_url: str = "http://172.16.30.62:7777"
     inspection_interval_minutes: int = 30
     inspection_max_records: int = 50
     sqlite_path: str = "data/inspections.db"
