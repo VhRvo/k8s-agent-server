@@ -30,7 +30,7 @@
           </div>
         </div>
 
-        <button class="new-chat-button" type="button" :disabled="isStreaming" @click="newChat">
+        <button class="new-chat-button" type="button" :disabled="isAnyStreaming" @click="newChat">
           <app-icon name="Plus"></app-icon>
           新建对话
         </button>
@@ -64,7 +64,7 @@
         <section class="conversation-section" aria-labelledby="conversation-title">
           <div class="section-heading">
             <span id="conversation-title">最近对话</span>
-            <span>{{ conversations.length }}</span>
+            <span>{{ conversationCount }}</span>
           </div>
 
           <label class="conversation-search">
@@ -89,7 +89,7 @@
               <button
                 class="conversation-open"
                 type="button"
-                :disabled="isStreaming"
+                :disabled="isAnyStreaming"
                 @click="selectConversation(conversation.id)"
               >
                 <span class="conversation-copy">
@@ -102,7 +102,7 @@
                 type="button"
                 title="删除对话"
                 aria-label="删除对话"
-                :disabled="isStreaming"
+                :disabled="isAnyStreaming"
                 @click="deleteConversation(conversation)"
               ><app-icon name="Trash2"></app-icon></button>
             </div>
@@ -130,7 +130,7 @@
             ><app-icon name="Menu"></app-icon></button>
             <div>
               <span class="header-kicker">
-                {{ activeView === 'chat' ? '对话诊断' : '集群巡检' }}
+                {{ activeView === 'chat' ? activeAgent.name : '集群巡检' }}
               </span>
               <h1>{{ pageTitle }}</h1>
             </div>
@@ -142,99 +142,247 @@
         </header>
 
         <section v-if="activeView === 'chat'" class="chat-view">
-          <div ref="messagesPanel" class="messages-panel">
-            <div class="messages-content">
-              <div v-if="loadingConversation" class="conversation-loading">
-                <span></span><span></span><span></span>
-              </div>
-
-              <div v-else-if="!messages.length" class="empty-chat">
-                <div class="empty-mark" aria-hidden="true">
-                  <span></span><span></span><span></span>
-                  <strong>K8s</strong>
-                </div>
-                <p class="empty-label">Kubernetes Agent</p>
-                <h2>今天要诊断什么？</h2>
-                <div class="suggestion-grid">
-                  <button
-                    v-for="suggestion in suggestions"
-                    :key="suggestion.title"
-                    type="button"
-                    @click="useSuggestion(suggestion.prompt)"
-                  >
-                    <span>{{ suggestion.label }}</span>
-                    <strong>{{ suggestion.title }}</strong>
-                    <small>{{ suggestion.detail }}</small>
-                  </button>
-                </div>
-              </div>
-
-              <div v-else class="message-list" aria-live="polite">
-                <article
-                  v-for="message in messages"
-                  :key="message.id"
-                  class="message-row"
-                  :class="message.role"
-                >
-                  <div class="message-avatar" aria-hidden="true">
-                    {{ message.role === 'user' ? '你' : 'AI' }}
-                  </div>
-                  <div class="message-body">
-                    <div class="message-meta">
-                      <strong>{{ message.role === 'user' ? '你' : 'K8s Agent' }}</strong>
-                      <span>{{ message.time }}</span>
-                    </div>
-                    <div
-                      v-if="message.role === 'user'"
-                      class="message-text"
-                      v-text="message.content"
-                    ></div>
-                    <div
-                      v-else-if="message.pending && !message.content"
-                      class="thinking"
-                      aria-label="正在生成回复"
-                    >
-                      <span></span><span></span><span></span>
-                    </div>
-                    <div
-                      v-else
-                      class="markdown"
-                      :class="{ error: message.error }"
-                      v-html="renderMarkdown(message.content)"
-                    ></div>
-                  </div>
-                </article>
-              </div>
+          <div class="agent-workspace-bar">
+            <div class="agent-tabs" role="tablist" aria-label="Agent 工作区">
+              <button
+                v-for="agent in agents"
+                :key="agent.id"
+                class="agent-tab"
+                :class="[
+                  agent.id,
+                  {
+                    active: activeAgentId === agent.id,
+                    streaming: isAgentStreaming(agent.id),
+                    unread: threadHasUnread(agent.id),
+                  },
+                ]"
+                type="button"
+                role="tab"
+                :aria-selected="activeAgentId === agent.id"
+                @click="switchAgent(agent.id)"
+              >
+                <span class="agent-tab-icon" aria-hidden="true">
+                  <app-icon :name="agent.icon"></app-icon>
+                </span>
+                <span class="agent-tab-copy">
+                  <strong>{{ agent.name }}</strong>
+                  <small>
+                    {{ isAgentStreaming(agent.id) ? '处理中' : agent.permission }}
+                  </small>
+                </span>
+                <span class="agent-tab-status">
+                  <app-icon
+                    v-if="isAgentStreaming(agent.id)"
+                    name="LoaderCircle"
+                  ></app-icon>
+                  <span
+                    v-else-if="threadHasUnread(agent.id)"
+                    class="agent-unread"
+                    aria-label="有新回复"
+                    title="有新回复"
+                  ></span>
+                  <span v-if="threadMessageCount(agent.id)" class="thread-count">
+                    {{ threadMessageCount(agent.id) }}
+                  </span>
+                </span>
+              </button>
             </div>
+            <button
+              class="context-toggle"
+              type="button"
+              :class="{ active: contextOpen }"
+              @click="contextOpen = !contextOpen"
+            >
+              <app-icon name="PanelRight"></app-icon>
+              共享上下文
+              <span>{{ sharedContext.length }}</span>
+            </button>
           </div>
 
-          <div class="composer-area">
-            <form class="composer" @submit.prevent="sendMessage">
-              <textarea
-                ref="messageInput"
-                v-model="draft"
-                rows="1"
-                maxlength="4000"
-                placeholder="向 K8s Agent 提问..."
-                aria-label="消息"
-                :disabled="isStreaming"
-                @keydown="handleComposerKeydown"
-              ></textarea>
-              <button
-                class="send-button"
-                type="submit"
-                :disabled="!canSend"
-                :title="isStreaming ? '正在生成回复' : '发送'"
-                aria-label="发送消息"
-              >
-                <span v-if="isStreaming" class="button-spinner"></span>
-                <app-icon v-else name="ArrowUp"></app-icon>
-              </button>
-            </form>
-            <div class="composer-footer">
-              <span>{{ isStreaming ? 'Agent 正在分析' : '就绪' }}</span>
-              <span>{{ draft.length }} / 4000</span>
+          <div class="chat-stage">
+            <div class="chat-column">
+              <div ref="messagesPanel" class="messages-panel">
+                <div class="messages-content">
+                  <div v-if="loadingConversation" class="conversation-loading">
+                    <span></span><span></span><span></span>
+                  </div>
+
+                  <div v-else-if="!messages.length" class="empty-chat">
+                    <div class="empty-mark" :class="activeAgentId" aria-hidden="true">
+                      <span></span><span></span><span></span>
+                      <strong>{{ agentBadge(activeAgentId) }}</strong>
+                    </div>
+                    <p class="empty-label">{{ activeAgent.english_name }}</p>
+                    <h2>{{ activeAgentHeadline }}</h2>
+                    <p class="agent-description">{{ activeAgent.description }}</p>
+                    <div class="suggestion-grid">
+                      <button
+                        v-for="suggestion in activeSuggestions"
+                        :key="suggestion.title"
+                        type="button"
+                        @click="useSuggestion(suggestion.prompt)"
+                      >
+                        <span>{{ suggestion.label }}</span>
+                        <strong>{{ suggestion.title }}</strong>
+                        <small>{{ suggestion.detail }}</small>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-else class="message-list" aria-live="polite">
+                    <article
+                      v-for="message in messages"
+                      :key="message.id"
+                      class="message-row"
+                      :class="[message.role, `agent-${message.agentId || activeAgentId}`]"
+                    >
+                      <div class="message-avatar" aria-hidden="true">
+                        {{ message.role === 'user' ? '你' : agentBadge(message.agentId) }}
+                      </div>
+                      <div class="message-body">
+                        <div class="message-meta">
+                          <strong>
+                            {{ message.role === 'user' ? '你' : agentName(message.agentId) }}
+                          </strong>
+                          <span>{{ message.time }}</span>
+                        </div>
+                        <div
+                          v-if="message.role === 'user'"
+                          class="message-text"
+                          v-text="message.content"
+                        ></div>
+                        <div
+                          v-else-if="message.pending && !message.content"
+                          class="thinking"
+                          :aria-label="`${agentName(message.agentId)}正在生成回复`"
+                        >
+                          <span></span><span></span><span></span>
+                        </div>
+                        <div
+                          v-else
+                          class="markdown"
+                          :class="{ error: message.error }"
+                          v-html="renderMarkdown(message.content)"
+                        ></div>
+                        <div
+                          v-if="message.role === 'assistant' && !message.pending && !message.error"
+                          class="message-actions"
+                        >
+                          <button type="button" @click="addToContext(message)">
+                            <app-icon name="Pin"></app-icon>
+                            固定证据
+                          </button>
+                          <button
+                            v-if="message.agentId !== 'analyst'"
+                            type="button"
+                            @click="handoffMessage(message, 'analyst')"
+                          >
+                            <app-icon name="ArrowRight"></app-icon>
+                            交给分析师
+                          </button>
+                          <button
+                            v-if="message.agentId !== 'operator'"
+                            type="button"
+                            @click="handoffMessage(message, 'operator')"
+                          >
+                            <app-icon name="ListChecks"></app-icon>
+                            制定方案
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+
+              <div class="composer-area">
+                <div v-if="activeAgentId === 'operator'" class="operator-safety">
+                  <app-icon name="ShieldCheck"></app-icon>
+                  <span><strong>方案模式</strong> 不会执行任何集群变更</span>
+                </div>
+                <form class="composer" @submit.prevent="sendMessage">
+                  <textarea
+                    ref="messageInput"
+                    v-model="draft"
+                    rows="1"
+                    maxlength="4000"
+                    :placeholder="composerPlaceholder"
+                    aria-label="消息"
+                    :disabled="isStreaming"
+                    @keydown="handleComposerKeydown"
+                  ></textarea>
+                  <button
+                    class="send-button"
+                    type="submit"
+                    :disabled="!canSend"
+                    :title="isStreaming ? '正在生成回复' : '发送'"
+                    aria-label="发送消息"
+                  >
+                    <span v-if="isStreaming" class="button-spinner"></span>
+                    <app-icon v-else name="ArrowUp"></app-icon>
+                  </button>
+                </form>
+                <div class="composer-footer">
+                  <span>
+                    {{ isStreaming ? `${activeAgent.name}正在处理` : activeAgent.permission }}
+                  </span>
+                  <span>{{ draft.length }} / 4000</span>
+                </div>
+              </div>
             </div>
+
+            <button
+              v-if="contextOpen"
+              class="context-backdrop"
+              type="button"
+              aria-label="关闭共享上下文"
+              @click="contextOpen = false"
+            ></button>
+            <aside class="context-panel" :class="{ open: contextOpen }">
+              <header>
+                <div>
+                  <span>当前事件</span>
+                  <strong>共享上下文</strong>
+                </div>
+                <div class="context-header-actions">
+                  <button
+                    v-if="sharedContext.length"
+                    type="button"
+                    title="清空共享上下文"
+                    aria-label="清空共享上下文"
+                    @click="clearContext"
+                  ><app-icon name="Trash2"></app-icon></button>
+                  <button
+                    class="context-close"
+                    type="button"
+                    title="关闭"
+                    aria-label="关闭"
+                    @click="contextOpen = false"
+                  ><app-icon name="X"></app-icon></button>
+                </div>
+              </header>
+              <div v-if="!sharedContext.length" class="context-empty">
+                <app-icon name="Pin"></app-icon>
+                <strong>暂无共享证据</strong>
+              </div>
+              <div v-else class="context-list">
+                <article v-for="item in sharedContext" :key="item.id">
+                  <div class="context-source">
+                    <span :class="item.sourceAgentId">
+                      {{ agentBadge(item.sourceAgentId) }}
+                    </span>
+                    <strong>{{ item.sourceName }}</strong>
+                    <button
+                      type="button"
+                      title="移除"
+                      aria-label="移除"
+                      @click="removeContext(item.id)"
+                    ><app-icon name="X"></app-icon></button>
+                  </div>
+                  <p>{{ contextExcerpt(item.content) }}</p>
+                </article>
+              </div>
+            </aside>
           </div>
         </section>
 

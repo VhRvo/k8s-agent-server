@@ -30,12 +30,14 @@ async def health():
 
 
 from k8s_agent.api.chat import router as chat_router
+from k8s_agent.api.agents import router as agents_router
 from k8s_agent.api.conversations import router as conversations_router
 from k8s_agent.api.inspections import router as inspections_router
 from k8s_agent.api.pages import router as pages_router
 from k8s_agent.api.proxy import router as proxy_router
 
 app.include_router(chat_router)
+app.include_router(agents_router)
 app.include_router(inspections_router)
 app.include_router(pages_router)
 app.include_router(conversations_router)

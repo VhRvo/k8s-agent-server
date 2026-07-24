@@ -4,7 +4,8 @@
 
 ## 功能
 
-- 对话式 K8s 诊断（多会话历史 + 流式输出 + Markdown 渲染）
+- 多 Agent K8s 诊断（总协调员 + 侦察员 + 分析师 + 操作方案顾问）
+- 独立专家线程、共享证据转交、流式输出与 Markdown 渲染
 - 定时巡检（集群健康检查 + 异常 Pod 日志分析，默认每 30 分钟）
 - Web UI（侧栏多会话 + 巡检视图）
 - SQLite 持久化巡检记录
@@ -34,6 +35,7 @@ uv run uvicorn k8s_agent.main:app --host 0.0.0.0 --port 7777
 | `AGENT_DB_PATH` | agno 会话 DB 路径 |
 | `AGENT_USER_ID` | 对话用的 user_id |
 | `AGENT_HISTORY_MESSAGES` | 注入上下文的历史消息数 |
+| `UPSTREAM_API_BASE_URL` | 前端代理连接的后端地址 |
 
 ## Docker
 
@@ -49,6 +51,8 @@ docker run -p 7777:7777 -v $(pwd)/data:/app/data k8s-agent-server
 | GET | `/` | Web UI |
 | GET | `/health` | 健康检查 |
 | POST | `/api/chat` | 流式对话（SSE） |
+| GET | `/api/agents` | Agent 列表与权限 |
+| POST | `/api/agents/{id}/chat` | 指定 Agent 的独立流式对话 |
 | GET | `/api/conversations` | 会话历史列表 |
 | GET | `/api/conversations/{id}` | 单个会话消息历史 |
 | DELETE | `/api/conversations/{id}` | 删除会话 |
@@ -69,4 +73,3 @@ src/k8s_agent/
 ├── api/             # HTTP 路由
 └── scheduler.py     # 定时调度
 ```
-
