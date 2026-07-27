@@ -20,6 +20,7 @@ const API_BASE = (
       description: "拆解任务、协调专家并汇总最终结论",
       permission: "团队协调",
       icon: "Users",
+      available: true,
     },
     {
       id: "investigator",
@@ -28,6 +29,7 @@ const API_BASE = (
       description: "只读采集 Pod、节点、事件、日志和资源数据",
       permission: "只读",
       icon: "Search",
+      available: true,
     },
     {
       id: "analyst",
@@ -36,6 +38,7 @@ const API_BASE = (
       description: "根据集群证据定位根因并评估影响",
       permission: "分析",
       icon: "Activity",
+      available: true,
     },
     {
       id: "operator",
@@ -44,6 +47,9 @@ const API_BASE = (
       description: "生成变更、验证和回滚方案，不直接执行",
       permission: "方案模式",
       icon: "Wrench",
+      available: false,
+      availability_note:
+        "后续版本将提供变更方案编排、人工审批、执行验证和回滚能力。",
     },
   ];
 
@@ -259,6 +265,7 @@ const API_BASE = (
       const initialWorkspaceId = createSessionId();
       const activeView = ref("chat");
       const activeAgentId = ref("team");
+      const hoveredAgentId = ref("");
       const agents = ref(FALLBACK_AGENTS);
       const workspaceId = ref(initialWorkspaceId);
       const threads = reactive(createThreads(initialWorkspaceId));
@@ -311,6 +318,10 @@ const API_BASE = (
       const activeAgentHeadline = computed(
         () => AGENT_HEADLINES[activeAgentId.value] || AGENT_HEADLINES.team
       );
+      const unavailableAgentHint = computed(() => {
+        const agent = agentById(hoveredAgentId.value);
+        return isAgentAvailable(agent) ? null : agent;
+      });
       const composerPlaceholder = computed(
         () => `向${activeAgent.value.name}提问...`
       );
@@ -337,7 +348,10 @@ const API_BASE = (
       );
 
       const canSend = computed(
-        () => Boolean(draft.value.trim()) && !isStreaming.value
+        () =>
+          Boolean(draft.value.trim()) &&
+          !isStreaming.value &&
+          isAgentAvailable(activeAgent.value)
       );
 
       const inspectionStats = computed(() => ({
@@ -361,6 +375,25 @@ const API_BASE = (
           FALLBACK_AGENTS.find((agent) => agent.id === agentId) ||
           FALLBACK_AGENTS[0]
         );
+      }
+
+      function isAgentAvailable(agentOrId) {
+        const agent =
+          typeof agentOrId === "string" ? agentById(agentOrId) : agentOrId;
+        return agent?.available !== false;
+      }
+
+      function agentAvailabilityNote(agentId) {
+        const agent = agentById(agentId);
+        return agent.availability_note || `${agent.name}将在后续版本开放。`;
+      }
+
+      function showAgentHint(agent) {
+        if (!isAgentAvailable(agent)) hoveredAgentId.value = agent.id;
+      }
+
+      function hideAgentHint(agentId) {
+        if (hoveredAgentId.value === agentId) hoveredAgentId.value = "";
       }
 
       function agentName(agentId) {
@@ -408,6 +441,9 @@ const API_BASE = (
           }
         } catch {
           agents.value = FALLBACK_AGENTS;
+        }
+        if (!isAgentAvailable(activeAgentId.value)) {
+          activeAgentId.value = "team";
         }
       }
 
@@ -470,6 +506,10 @@ const API_BASE = (
 
       function switchAgent(agentId) {
         if (!threads[agentId]) return;
+        if (!isAgentAvailable(agentId)) {
+          showToast(agentAvailabilityNote(agentId));
+          return;
+        }
         activeAgentId.value = agentId;
         threads[agentId].hasUnread = false;
         activeView.value = "chat";
@@ -580,6 +620,10 @@ const API_BASE = (
       }
 
       function handoffMessage(message, targetAgentId) {
+        if (!isAgentAvailable(targetAgentId)) {
+          showToast(agentAvailabilityNote(targetAgentId));
+          return;
+        }
         pinMessage(message, false);
         switchAgent(targetAgentId);
         const source = agentName(message.agentId);
@@ -629,7 +673,14 @@ const API_BASE = (
         const text = draft.value.trim();
         const agentId = activeAgentId.value;
         const thread = threads[agentId];
-        if (!text || !thread || thread.isStreaming) return;
+        if (
+          !text ||
+          !thread ||
+          thread.isStreaming ||
+          !isAgentAvailable(agentId)
+        ) {
+          return;
+        }
         const sentAt = currentTime();
         const assistantMessage = reactive({
           id: `assistant-${Date.now()}`,
@@ -844,6 +895,7 @@ const API_BASE = (
         activeSuggestions,
         activeView,
         addToContext,
+        agentAvailabilityNote,
         agentBadge,
         agentName,
         agents,
@@ -866,10 +918,12 @@ const API_BASE = (
         formatDateTime,
         handleComposerKeydown,
         handoffMessage,
+        hideAgentHint,
         inspectionStats,
         inspectionStatusClass,
         inspectionStatusText,
         inspections,
+        isAgentAvailable,
         isAgentStreaming,
         isAnyStreaming,
         isStreaming,
@@ -891,6 +945,7 @@ const API_BASE = (
         serviceStatus,
         serviceStatusText,
         sharedContext,
+        showAgentHint,
         sidebarOpen,
         startingInspection,
         switchAgent,
@@ -899,6 +954,7 @@ const API_BASE = (
         threadMessageCount,
         toast,
         toggleInspection,
+        unavailableAgentHint,
         useSuggestion,
       };
   }

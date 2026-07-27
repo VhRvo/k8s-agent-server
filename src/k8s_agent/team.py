@@ -87,6 +87,7 @@ AGENT_PROFILES = [
         "description": "拆解任务、协调专家并汇总最终结论",
         "permission": "团队协调",
         "icon": "Users",
+        "available": True,
     },
     {
         "id": "investigator",
@@ -95,6 +96,7 @@ AGENT_PROFILES = [
         "description": "只读采集 Pod、节点、事件、日志和资源数据",
         "permission": "只读",
         "icon": "Search",
+        "available": True,
     },
     {
         "id": "analyst",
@@ -103,6 +105,7 @@ AGENT_PROFILES = [
         "description": "根据集群证据定位根因并评估影响",
         "permission": "分析",
         "icon": "Activity",
+        "available": True,
     },
     {
         "id": "operator",
@@ -111,6 +114,10 @@ AGENT_PROFILES = [
         "description": "生成变更、验证和回滚方案，不直接执行",
         "permission": "方案模式",
         "icon": "Wrench",
+        "available": False,
+        "availability_note": (
+            "后续版本将提供变更方案编排、人工审批、执行验证和回滚能力。"
+        ),
     },
 ]
 

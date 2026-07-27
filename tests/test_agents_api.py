@@ -12,12 +12,16 @@ client = TestClient(app)
 def test_list_agents_includes_team_and_specialists():
     response = client.get("/api/agents")
     assert response.status_code == 200
-    assert [item["id"] for item in response.json()["agents"]] == [
+    profiles = response.json()["agents"]
+    assert [item["id"] for item in profiles] == [
         "team",
         "investigator",
         "analyst",
         "operator",
     ]
+    operator = next(item for item in profiles if item["id"] == "operator")
+    assert operator["available"] is False
+    assert "后续版本" in operator["availability_note"]
 
 
 def test_agent_chat_streams_selected_agent(monkeypatch):

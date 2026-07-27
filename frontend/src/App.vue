@@ -9,6 +9,7 @@ const {
   activeSuggestions,
   activeView,
   addToContext,
+  agentAvailabilityNote,
   agentBadge,
   agentName,
   agents,
@@ -30,10 +31,12 @@ const {
   formatDateTime,
   handleComposerKeydown,
   handoffMessage,
+  hideAgentHint,
   inspectionStats,
   inspectionStatusClass,
   inspectionStatusText,
   inspections,
+  isAgentAvailable,
   isAgentStreaming,
   isAnyStreaming,
   isStreaming,
@@ -55,6 +58,7 @@ const {
   serviceStatus,
   serviceStatusText,
   sharedContext,
+  showAgentHint,
   sidebarOpen,
   startingInspection,
   switchAgent,
@@ -63,6 +67,7 @@ const {
   threadMessageCount,
   toast,
   toggleInspection,
+  unavailableAgentHint,
   useSuggestion,
 } = useOperationsConsole();
 </script>
@@ -211,11 +216,25 @@ const {
                     active: activeAgentId === agent.id,
                     streaming: isAgentStreaming(agent.id),
                     unread: threadHasUnread(agent.id),
+                    unavailable: !isAgentAvailable(agent),
                   },
                 ]"
                 type="button"
                 role="tab"
                 :aria-selected="activeAgentId === agent.id"
+                :aria-disabled="!isAgentAvailable(agent)"
+                :aria-describedby="
+                  !isAgentAvailable(agent) ? 'agent-availability-hint' : null
+                "
+                :title="
+                  !isAgentAvailable(agent)
+                    ? agentAvailabilityNote(agent.id)
+                    : null
+                "
+                @mouseenter="showAgentHint(agent)"
+                @mouseleave="hideAgentHint(agent.id)"
+                @focus="showAgentHint(agent)"
+                @blur="hideAgentHint(agent.id)"
                 @click="switchAgent(agent.id)"
               >
                 <span class="agent-tab-icon" aria-hidden="true">
@@ -224,7 +243,13 @@ const {
                 <span class="agent-tab-copy">
                   <strong>{{ agent.name }}</strong>
                   <small>
-                    {{ isAgentStreaming(agent.id) ? '处理中' : agent.permission }}
+                    {{
+                      isAgentStreaming(agent.id)
+                        ? '处理中'
+                        : isAgentAvailable(agent)
+                          ? agent.permission
+                          : '规划中'
+                    }}
                   </small>
                 </span>
                 <span class="agent-tab-status">
@@ -238,6 +263,10 @@ const {
                     aria-label="有新回复"
                     title="有新回复"
                   ></span>
+                  <app-icon
+                    v-else-if="!isAgentAvailable(agent)"
+                    name="Clock3"
+                  ></app-icon>
                   <span v-if="threadMessageCount(agent.id)" class="thread-count">
                     {{ threadMessageCount(agent.id) }}
                   </span>
@@ -254,6 +283,22 @@ const {
               共享上下文
               <span>{{ sharedContext.length }}</span>
             </button>
+            <transition name="agent-hint">
+              <div
+                v-if="unavailableAgentHint"
+                id="agent-availability-hint"
+                class="agent-availability-tooltip"
+                role="tooltip"
+              >
+                <span>功能规划中</span>
+                <strong>
+                  {{ unavailableAgentHint.name }}
+                  · {{ unavailableAgentHint.english_name }}
+                </strong>
+                <p>{{ unavailableAgentHint.description }}</p>
+                <small>{{ unavailableAgentHint.availability_note }}</small>
+              </div>
+            </transition>
           </div>
 
           <div class="chat-stage">
@@ -340,10 +385,12 @@ const {
                           <button
                             v-if="message.agentId !== 'operator'"
                             type="button"
+                            :disabled="!isAgentAvailable('operator')"
+                            :title="agentAvailabilityNote('operator')"
                             @click="handoffMessage(message, 'operator')"
                           >
                             <app-icon name="ListChecks"></app-icon>
-                            制定方案
+                            操作员规划中
                           </button>
                         </div>
                       </div>
