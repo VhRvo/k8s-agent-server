@@ -1,17 +1,74 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#18201f">
-  <title>K8s 智能运维</title>
-  <link rel="stylesheet" href="/static/styles.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-  <script defer src="/static/app.js"></script>
-</head>
-<body>
-  <div id="app" v-cloak>
+<script setup>
+import AppIcon from "./components/AppIcon.vue";
+import { useOperationsConsole } from "./composables/useOperationsConsole";
+
+const {
+  activeAgent,
+  activeAgentHeadline,
+  activeAgentId,
+  activeSuggestions,
+  activeView,
+  addToContext,
+  agentBadge,
+  agentName,
+  agents,
+  canSend,
+  checkHealth,
+  clearContext,
+  composerPlaceholder,
+  contextExcerpt,
+  contextOpen,
+  conversationCount,
+  conversationQuery,
+  currentSessionId,
+  currentTitle,
+  deleteConversation,
+  draft,
+  expandedInspectionId,
+  filteredConversations,
+  formatConversationTime,
+  formatDateTime,
+  handleComposerKeydown,
+  handoffMessage,
+  inspectionStats,
+  inspectionStatusClass,
+  inspectionStatusText,
+  inspections,
+  isAgentStreaming,
+  isAnyStreaming,
+  isStreaming,
+  loadInspections,
+  loadingConversation,
+  loadingConversations,
+  loadingInspections,
+  messageInput,
+  messages,
+  messagesPanel,
+  newChat,
+  pageTitle,
+  removeContext,
+  renderMarkdown,
+  runInspection,
+  runningInspectionCount,
+  selectConversation,
+  sendMessage,
+  serviceStatus,
+  serviceStatusText,
+  sharedContext,
+  sidebarOpen,
+  startingInspection,
+  switchAgent,
+  switchView,
+  threadHasUnread,
+  threadMessageCount,
+  toast,
+  toggleInspection,
+  useSuggestion,
+} = useOperationsConsole();
+</script>
+
+<template>
+  <div>
     <div class="app-shell">
       <button
         v-if="sidebarOpen"
@@ -489,6 +546,4 @@
     </div>
   </div>
 
-  <noscript>该页面需要启用 JavaScript。</noscript>
-</body>
-</html>
+</template>

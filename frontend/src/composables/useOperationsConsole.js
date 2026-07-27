@@ -1,19 +1,16 @@
-(() => {
-  "use strict";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 
-  const {
-    computed,
-    createApp,
-    h,
-    nextTick,
-    onMounted,
-    onUnmounted,
-    reactive,
-    ref,
-    watch,
-  } = Vue;
-
-  const API_BASE = "/backend";
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL || "/backend"
+).replace(/\/$/, "");
 
   const FALLBACK_AGENTS = [
     {
@@ -147,36 +144,6 @@
     operator: "策",
   };
 
-  const LucideIcon = {
-    props: {
-      name: {
-        type: String,
-        required: true,
-      },
-    },
-    setup(props) {
-      return () => {
-        const icon =
-          globalThis.lucide?.icons?.[props.name] ||
-          globalThis.lucide?.icons?.Circle;
-        if (!icon) return h("span", { class: "lucide", "aria-hidden": "true" });
-
-        const [tag, attributes, children] = icon;
-        return h(
-          tag,
-          {
-            ...attributes,
-            class: "lucide",
-            "aria-hidden": "true",
-          },
-          children.map(([childTag, childAttributes]) =>
-            h(childTag, childAttributes)
-          )
-        );
-      };
-    },
-  };
-
   function createSessionId() {
     return globalThis.crypto?.randomUUID?.() || `session-${Date.now()}`;
   }
@@ -288,8 +255,7 @@
     }
   }
 
-  const app = createApp({
-    setup() {
+  export function useOperationsConsole() {
       const initialWorkspaceId = createSessionId();
       const activeView = ref("chat");
       const activeAgentId = ref("team");
@@ -935,9 +901,4 @@
         toggleInspection,
         useSuggestion,
       };
-    },
-  });
-
-  app.component("AppIcon", LucideIcon);
-  app.mount("#app");
-})();
+  }

@@ -7,12 +7,14 @@ from k8s_agent.main import app
 client = TestClient(app)
 
 
-def test_web_ui_and_assets_are_served():
-    page = client.get("/")
-    assert page.status_code == 200
-    assert "/static/app.js" in page.text
-    assert client.get("/static/app.js").status_code == 200
-    assert client.get("/static/styles.css").status_code == 200
+def test_backend_root_describes_api():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "K8s Diagnosis Agent",
+        "health": "/health",
+        "docs": "/docs",
+    }
 
 
 class FakeResponse:

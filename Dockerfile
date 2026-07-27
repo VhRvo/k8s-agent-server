@@ -11,7 +11,6 @@ COPY pyproject.toml uv.lock* ./
 RUN uv sync --no-dev
 
 COPY src/ src/
-COPY static/ static/
 
 RUN mkdir -p data
 VOLUME /app/data

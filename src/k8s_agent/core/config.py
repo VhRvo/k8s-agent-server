@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     litellm_api_key: str = "sk-xxx"
     server_host: str = "0.0.0.0"
     server_port: int = 7777
+    cors_origins: str = "http://localhost:7778,http://127.0.0.1:7778"
     upstream_api_base_url: str = "http://172.16.30.62:7777"
     inspection_interval_minutes: int = 30
     inspection_max_records: int = 50
@@ -17,6 +18,14 @@ class Settings(BaseSettings):
     agent_db_path: str = "data/agent.db"
     agent_user_id: str = "default"
     agent_history_messages: int = 20
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.cors_origins.split(",")
+            if origin.strip()
+        ]
 
 
 settings = Settings()

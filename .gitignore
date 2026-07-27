@@ -4,5 +4,6 @@ __pycache__/
 data/
 .env
 *.egg-info/
+node_modules/
 dist/
 docs/
