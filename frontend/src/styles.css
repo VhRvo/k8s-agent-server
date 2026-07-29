@@ -1431,6 +1431,7 @@ button:disabled {
 .composer textarea {
   flex: 1;
   width: 100%;
+  min-width: 0;
   min-height: 36px;
   max-height: 160px;
   padding: 8px 0;
@@ -1444,6 +1445,14 @@ button:disabled {
 
 .composer textarea::placeholder {
   color: #919c99;
+}
+
+.composer-actions {
+  display: flex;
+  flex: 0 0 82px;
+  width: 82px;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .send-button {

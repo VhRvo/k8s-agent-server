@@ -14,7 +14,6 @@ const API_BASE = (
 
   const RESPONSE_COLLAPSE_THRESHOLD = 520;
   const RESPONSE_SUMMARY_LENGTH = 220;
-  const STREAM_IDLE_RELEASE_MS = 350;
 
   const FALLBACK_AGENTS = [
     {
@@ -404,10 +403,17 @@ const API_BASE = (
       );
 
       const canSend = computed(
-        () =>
-          Boolean(draft.value.trim()) &&
-          !isStreaming.value &&
-          isAgentAvailable(activeAgent.value)
+        () => {
+          const thread = activeThread.value;
+          const canQueue =
+            thread?.requestActive && !thread.queuedRequest;
+          return (
+            Boolean(draft.value.trim()) &&
+            Boolean(thread) &&
+            (!thread.isStreaming || canQueue) &&
+            isAgentAvailable(activeAgent.value)
+          );
+        }
       );
 
       const inspectionStats = computed(() => ({
@@ -708,7 +714,7 @@ const API_BASE = (
         }).format(new Date());
       }
 
-      function applyStreamEvent(eventText, assistantMessage, onContent) {
+      function applyStreamEvent(eventText, assistantMessage) {
         const data = eventText
           .split(/\r?\n/)
           .filter((line) => line.startsWith("data:"))
@@ -722,7 +728,6 @@ const API_BASE = (
         if (payload.error) throw new Error(payload.error);
         if (payload.content) {
           assistantMessage.content += payload.content;
-          onContent();
           if (activeAgentId.value === assistantMessage.agentId) {
             scrollToBottom();
           }
@@ -734,6 +739,12 @@ const API_BASE = (
         const thread = threads[agentId];
         if (!thread?.isStreaming) return;
 
+        const controller = streamControllers.get(agentId);
+        if (controller) {
+          controller.abort();
+          return;
+        }
+
         if (thread.queuedRequest) {
           const queuedRequest = thread.queuedRequest;
           thread.queuedRequest = null;
@@ -741,12 +752,7 @@ const API_BASE = (
           queuedRequest.assistantMessage.stopped = true;
           thread.isStreaming = false;
           focusComposer();
-          return;
         }
-
-        const controller = streamControllers.get(agentId);
-        if (!controller) return;
-        controller.abort();
       }
 
       async function executeMessage(request) {
@@ -775,21 +781,6 @@ const API_BASE = (
 
         const controller = new AbortController();
         streamControllers.set(agentId, controller);
-        let contentIdleTimer = null;
-
-        const markContentActivity = () => {
-          clearTimeout(contentIdleTimer);
-          assistantMessage.pending = true;
-          if (!thread.queuedRequest) thread.isStreaming = true;
-
-          contentIdleTimer = setTimeout(() => {
-            if (isDisposed) return;
-            assistantMessage.pending = false;
-            if (!thread.queuedRequest) thread.isStreaming = false;
-            thread.hasUnread = activeAgentId.value !== agentId;
-            if (activeAgentId.value === agentId) focusComposer();
-          }, STREAM_IDLE_RELEASE_MS);
-        };
 
         try {
           const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -813,11 +804,7 @@ const API_BASE = (
             buffer = events.pop() || "";
 
             for (const event of events) {
-              receivedDoneEvent = applyStreamEvent(
-                event,
-                assistantMessage,
-                markContentActivity
-              );
+              receivedDoneEvent = applyStreamEvent(event, assistantMessage);
               if (receivedDoneEvent) break;
             }
 
@@ -829,7 +816,7 @@ const API_BASE = (
           }
 
           if (!receivedDoneEvent && buffer.trim()) {
-            applyStreamEvent(buffer, assistantMessage, markContentActivity);
+            applyStreamEvent(buffer, assistantMessage);
           }
           if (!assistantMessage.content) {
             assistantMessage.content = "未收到回复内容，请稍后重试。";
@@ -843,7 +830,6 @@ const API_BASE = (
             assistantMessage.error = true;
           }
         } finally {
-          clearTimeout(contentIdleTimer);
           if (streamControllers.get(agentId) === controller) {
             streamControllers.delete(agentId);
           }
@@ -868,10 +854,12 @@ const API_BASE = (
         const text = draft.value.trim();
         const agentId = activeAgentId.value;
         const thread = threads[agentId];
+        const canQueue =
+          thread?.requestActive && !thread.queuedRequest;
         if (
           !text ||
           !thread ||
-          thread.isStreaming ||
+          (thread.isStreaming && !canQueue) ||
           !isAgentAvailable(agentId)
         ) {
           return;

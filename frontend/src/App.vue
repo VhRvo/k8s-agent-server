@@ -439,26 +439,27 @@ const {
                     :aria-busy="isStreaming"
                     @keydown="handleComposerKeydown"
                   ></textarea>
-                  <button
-                    v-if="isStreaming"
-                    class="send-button stop-button"
-                    type="button"
-                    :title="`停止${activeAgent.name}生成`"
-                    :aria-label="`停止${activeAgent.name}生成`"
-                    @click="stopAgent(activeAgentId)"
-                  >
-                    <app-icon name="Square"></app-icon>
-                  </button>
-                  <button
-                    v-else
-                    class="send-button"
-                    type="submit"
-                    :disabled="!canSend"
-                    title="发送"
-                    aria-label="发送消息"
-                  >
-                    <app-icon name="ArrowUp"></app-icon>
-                  </button>
+                  <div class="composer-actions">
+                    <button
+                      v-if="isStreaming"
+                      class="send-button stop-button"
+                      type="button"
+                      :title="`停止${activeAgent.name}生成`"
+                      :aria-label="`停止${activeAgent.name}生成`"
+                      @click="stopAgent(activeAgentId)"
+                    >
+                      <app-icon name="Square"></app-icon>
+                    </button>
+                    <button
+                      class="send-button"
+                      type="submit"
+                      :disabled="!canSend"
+                      :title="isStreaming ? '排队发送下一条' : '发送'"
+                      :aria-label="isStreaming ? '排队发送消息' : '发送消息'"
+                    >
+                      <app-icon name="ArrowUp"></app-icon>
+                    </button>
+                  </div>
                 </form>
                 <div class="composer-footer">
                   <span>
