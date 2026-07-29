@@ -12,6 +12,10 @@ const API_BASE = (
   import.meta.env.VITE_API_BASE_URL || "/backend"
 ).replace(/\/$/, "");
 
+  const RESPONSE_COLLAPSE_THRESHOLD = 520;
+  const RESPONSE_SUMMARY_LENGTH = 220;
+  const STREAM_IDLE_RELEASE_MS = 350;
+
   const FALLBACK_AGENTS = [
     {
       id: "team",
@@ -160,6 +164,8 @@ const API_BASE = (
       messages: [],
       draft: "",
       isStreaming: false,
+      requestActive: false,
+      queuedRequest: null,
       hasUnread: false,
     };
   }
@@ -252,6 +258,48 @@ const API_BASE = (
     return html;
   }
 
+  function responseSummary(value) {
+    const content = String(value || "");
+    const namedSection = content.match(
+      /(?:^|\n)#{1,6}\s*(?:总结|摘要|结论|总体结论|执行摘要)\s*\n([\s\S]*?)(?=\n#{1,6}\s|\s*$)/i
+    );
+    const text = String(namedSection?.[1] || content)
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, "")
+      .replace(/[*_>#|]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (text.length <= RESPONSE_SUMMARY_LENGTH) return text;
+
+    const excerpt = text.slice(0, RESPONSE_SUMMARY_LENGTH);
+    const sentenceEnd = Math.max(
+      excerpt.lastIndexOf("。"),
+      excerpt.lastIndexOf("！"),
+      excerpt.lastIndexOf("？"),
+      excerpt.lastIndexOf("；"),
+      excerpt.lastIndexOf("."),
+      excerpt.lastIndexOf("!"),
+      excerpt.lastIndexOf("?")
+    );
+    const end = sentenceEnd >= 120 ? sentenceEnd + 1 : excerpt.length;
+    return `${excerpt.slice(0, end).trim()}...`;
+  }
+
+  function shouldCollapseResponse(message) {
+    return Boolean(
+      message?.role === "assistant" &&
+      !message.pending &&
+      !message.error &&
+      !message.stopped &&
+      String(message.content || "").length > RESPONSE_COLLAPSE_THRESHOLD
+    );
+  }
+
   async function readError(response) {
     try {
       const data = await response.json();
@@ -289,6 +337,8 @@ const API_BASE = (
       let healthTimer = null;
       let inspectionTimer = null;
       let toastTimer = null;
+      let isDisposed = false;
+      const streamControllers = new Map();
 
       const activeAgent = computed(
         () =>
@@ -310,7 +360,13 @@ const API_BASE = (
         () => Boolean(activeThread.value?.isStreaming)
       );
       const isAnyStreaming = computed(
-        () => Object.values(threads).some((thread) => thread.isStreaming)
+        () =>
+          Object.values(threads).some(
+            (thread) =>
+              thread.isStreaming ||
+              thread.requestActive ||
+              Boolean(thread.queuedRequest)
+          )
       );
       const activeSuggestions = computed(
         () => AGENT_SUGGESTIONS[activeAgentId.value] || AGENT_SUGGESTIONS.team
@@ -554,6 +610,7 @@ const API_BASE = (
             time: "",
             pending: false,
             error: false,
+            stopped: false,
           }));
           scrollToBottom();
         } catch (error) {
@@ -651,21 +708,159 @@ const API_BASE = (
         }).format(new Date());
       }
 
-      function applyStreamEvent(eventText, assistantMessage) {
+      function applyStreamEvent(eventText, assistantMessage, onContent) {
         const data = eventText
           .split(/\r?\n/)
           .filter((line) => line.startsWith("data:"))
           .map((line) => line.slice(5).trimStart())
           .join("\n");
 
-        if (!data || data === "[DONE]") return;
+        if (!data) return false;
+        if (data === "[DONE]") return true;
+
         const payload = JSON.parse(data);
         if (payload.error) throw new Error(payload.error);
         if (payload.content) {
           assistantMessage.content += payload.content;
+          onContent();
           if (activeAgentId.value === assistantMessage.agentId) {
             scrollToBottom();
           }
+        }
+        return false;
+      }
+
+      function stopAgent(agentId = activeAgentId.value) {
+        const thread = threads[agentId];
+        if (!thread?.isStreaming) return;
+
+        if (thread.queuedRequest) {
+          const queuedRequest = thread.queuedRequest;
+          thread.queuedRequest = null;
+          queuedRequest.assistantMessage.pending = false;
+          queuedRequest.assistantMessage.stopped = true;
+          thread.isStreaming = false;
+          focusComposer();
+          return;
+        }
+
+        const controller = streamControllers.get(agentId);
+        if (!controller) return;
+        controller.abort();
+      }
+
+      async function executeMessage(request) {
+        const {
+          agentId,
+          text,
+          assistantMessage,
+          context,
+        } = request;
+        const thread = threads[agentId];
+        if (!thread || isDisposed) return;
+
+        thread.requestActive = true;
+        thread.isStreaming = true;
+        const endpoint =
+          agentId === "team"
+            ? "/api/chat"
+            : `/api/agents/${encodeURIComponent(agentId)}/chat`;
+        const body = {
+          message: text,
+          session_id: thread.sessionId,
+        };
+        if (agentId !== "team") {
+          body.context = context;
+        }
+
+        const controller = new AbortController();
+        streamControllers.set(agentId, controller);
+        let contentIdleTimer = null;
+
+        const markContentActivity = () => {
+          clearTimeout(contentIdleTimer);
+          assistantMessage.pending = true;
+          if (!thread.queuedRequest) thread.isStreaming = true;
+
+          contentIdleTimer = setTimeout(() => {
+            if (isDisposed) return;
+            assistantMessage.pending = false;
+            if (!thread.queuedRequest) thread.isStreaming = false;
+            thread.hasUnread = activeAgentId.value !== agentId;
+            if (activeAgentId.value === agentId) focusComposer();
+          }, STREAM_IDLE_RELEASE_MS);
+        };
+
+        try {
+          const response = await fetch(`${API_BASE}${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(await readError(response));
+          if (!response.body) throw new Error("浏览器不支持流式响应");
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let receivedDoneEvent = false;
+
+          while (!receivedDoneEvent) {
+            const { done, value } = await reader.read();
+            buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+            const events = buffer.split(/\r?\n\r?\n/);
+            buffer = events.pop() || "";
+
+            for (const event of events) {
+              receivedDoneEvent = applyStreamEvent(
+                event,
+                assistantMessage,
+                markContentActivity
+              );
+              if (receivedDoneEvent) break;
+            }
+
+            if (receivedDoneEvent) {
+              await reader.cancel().catch(() => {});
+              break;
+            }
+            if (done) break;
+          }
+
+          if (!receivedDoneEvent && buffer.trim()) {
+            applyStreamEvent(buffer, assistantMessage, markContentActivity);
+          }
+          if (!assistantMessage.content) {
+            assistantMessage.content = "未收到回复内容，请稍后重试。";
+            assistantMessage.error = true;
+          }
+        } catch (error) {
+          if (error?.name === "AbortError") {
+            assistantMessage.stopped = true;
+          } else {
+            assistantMessage.content = `请求失败：${error.message}`;
+            assistantMessage.error = true;
+          }
+        } finally {
+          clearTimeout(contentIdleTimer);
+          if (streamControllers.get(agentId) === controller) {
+            streamControllers.delete(agentId);
+          }
+          assistantMessage.pending = false;
+          thread.requestActive = false;
+          thread.hasUnread = activeAgentId.value !== agentId;
+
+          const queuedRequest = thread.queuedRequest;
+          thread.queuedRequest = null;
+          if (queuedRequest && !isDisposed) {
+            thread.isStreaming = true;
+            void executeMessage(queuedRequest);
+          } else {
+            thread.isStreaming = false;
+            if (activeAgentId.value === agentId) focusComposer();
+          }
+          void loadConversations();
         }
       }
 
@@ -690,6 +885,7 @@ const API_BASE = (
           time: sentAt,
           pending: true,
           error: false,
+          stopped: false,
         });
 
         thread.messages.push(
@@ -714,55 +910,21 @@ const API_BASE = (
         resizeComposer();
         scrollToBottom();
 
-        const endpoint =
-          agentId === "team"
-            ? "/api/chat"
-            : `/api/agents/${encodeURIComponent(agentId)}/chat`;
-        const body = {
-          message: text,
-          session_id: thread.sessionId,
+        const request = {
+          agentId,
+          text,
+          assistantMessage,
+          context:
+            agentId === "team"
+              ? []
+              : sharedContext.value.map((item) => item.content),
         };
-        if (agentId !== "team") {
-          body.context = sharedContext.value.map((item) => item.content);
+
+        if (thread.requestActive) {
+          thread.queuedRequest = request;
+          return;
         }
-
-        try {
-          const response = await fetch(`${API_BASE}${endpoint}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          if (!response.ok) throw new Error(await readError(response));
-          if (!response.body) throw new Error("浏览器不支持流式响应");
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-            const events = buffer.split(/\r?\n\r?\n/);
-            buffer = events.pop() || "";
-            events.forEach((event) => applyStreamEvent(event, assistantMessage));
-            if (done) break;
-          }
-
-          if (buffer.trim()) applyStreamEvent(buffer, assistantMessage);
-          if (!assistantMessage.content) {
-            assistantMessage.content = "未收到回复内容，请稍后重试。";
-            assistantMessage.error = true;
-          }
-        } catch (error) {
-          assistantMessage.content = `请求失败：${error.message}`;
-          assistantMessage.error = true;
-        } finally {
-          assistantMessage.pending = false;
-          thread.isStreaming = false;
-          thread.hasUnread = activeAgentId.value !== agentId;
-          await loadConversations();
-          if (activeAgentId.value === agentId) focusComposer();
-        }
+        await executeMessage(request);
       }
 
       function handleComposerKeydown(event) {
@@ -883,6 +1045,12 @@ const API_BASE = (
       });
 
       onUnmounted(() => {
+        isDisposed = true;
+        Object.values(threads).forEach((thread) => {
+          thread.queuedRequest = null;
+        });
+        streamControllers.forEach((controller) => controller.abort());
+        streamControllers.clear();
         clearInterval(healthTimer);
         clearInterval(inspectionTimer);
         clearTimeout(toastTimer);
@@ -948,6 +1116,7 @@ const API_BASE = (
         showAgentHint,
         sidebarOpen,
         startingInspection,
+        stopAgent,
         switchAgent,
         switchView,
         threadHasUnread,
@@ -956,5 +1125,7 @@ const API_BASE = (
         toggleInspection,
         unavailableAgentHint,
         useSuggestion,
+        responseSummary,
+        shouldCollapseResponse,
       };
   }

@@ -1179,6 +1179,87 @@ button:disabled {
   height: 12px;
 }
 
+.message-state {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  color: #7a6250;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.message-state .lucide {
+  width: 10px;
+  height: 10px;
+  fill: currentColor;
+}
+
+.response-summary {
+  padding: 10px 12px;
+  background: #edf4f1;
+  border-left: 3px solid #5b9989;
+  border-radius: 0 6px 6px 0;
+}
+
+.response-summary > span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.response-summary p {
+  margin: 0;
+  color: #34413e;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.response-details {
+  margin-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.response-details summary {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  list-style: none;
+}
+
+.response-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.response-details summary small {
+  margin-left: auto;
+  color: #929c99;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.response-details summary .lucide {
+  width: 14px;
+  height: 14px;
+  transition: transform 160ms ease;
+}
+
+.response-details[open] summary .lucide {
+  transform: rotate(180deg);
+}
+
+.response-details .markdown {
+  padding-top: 8px;
+}
+
 .thinking {
   display: flex;
   align-items: center;
@@ -1381,6 +1462,21 @@ button:disabled {
 
 .send-button:hover:not(:disabled) {
   background: var(--primary-hover);
+}
+
+.send-button.stop-button {
+  background: var(--danger);
+}
+
+.send-button.stop-button:hover {
+  background: #a9313a;
+}
+
+.send-button.stop-button .lucide {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: none;
 }
 
 .send-button .lucide {

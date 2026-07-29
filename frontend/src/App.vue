@@ -61,6 +61,7 @@ const {
   showAgentHint,
   sidebarOpen,
   startingInspection,
+  stopAgent,
   switchAgent,
   switchView,
   threadHasUnread,
@@ -69,6 +70,8 @@ const {
   toggleInspection,
   unavailableAgentHint,
   useSuggestion,
+  responseSummary,
+  shouldCollapseResponse,
 } = useOperationsConsole();
 </script>
 
@@ -360,12 +363,33 @@ const {
                         >
                           <span></span><span></span><span></span>
                         </div>
+                        <template v-else-if="shouldCollapseResponse(message)">
+                          <section class="response-summary">
+                            <span>总结</span>
+                            <p v-text="responseSummary(message.content)"></p>
+                          </section>
+                          <details class="response-details">
+                            <summary>
+                              <span>完整信息</span>
+                              <small>{{ message.content.length }} 字</small>
+                              <app-icon name="ChevronDown"></app-icon>
+                            </summary>
+                            <div
+                              class="markdown"
+                              v-html="renderMarkdown(message.content)"
+                            ></div>
+                          </details>
+                        </template>
                         <div
                           v-else
                           class="markdown"
                           :class="{ error: message.error }"
                           v-html="renderMarkdown(message.content)"
                         ></div>
+                        <div v-if="message.stopped" class="message-state stopped">
+                          <app-icon name="Square"></app-icon>
+                          已停止生成
+                        </div>
                         <div
                           v-if="message.role === 'assistant' && !message.pending && !message.error"
                           class="message-actions"
@@ -412,18 +436,28 @@ const {
                     maxlength="4000"
                     :placeholder="composerPlaceholder"
                     aria-label="消息"
-                    :disabled="isStreaming"
+                    :aria-busy="isStreaming"
                     @keydown="handleComposerKeydown"
                   ></textarea>
                   <button
+                    v-if="isStreaming"
+                    class="send-button stop-button"
+                    type="button"
+                    :title="`停止${activeAgent.name}生成`"
+                    :aria-label="`停止${activeAgent.name}生成`"
+                    @click="stopAgent(activeAgentId)"
+                  >
+                    <app-icon name="Square"></app-icon>
+                  </button>
+                  <button
+                    v-else
                     class="send-button"
                     type="submit"
                     :disabled="!canSend"
-                    :title="isStreaming ? '正在生成回复' : '发送'"
+                    title="发送"
                     aria-label="发送消息"
                   >
-                    <span v-if="isStreaming" class="button-spinner"></span>
-                    <app-icon v-else name="ArrowUp"></app-icon>
+                    <app-icon name="ArrowUp"></app-icon>
                   </button>
                 </form>
                 <div class="composer-footer">
