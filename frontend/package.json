@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 7778 --strictPort",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 7778 --strictPort"
+    "preview": "vite preview --host 0.0.0.0 --port 7778 --strictPort",
+    "test": "node --test"
   },
   "dependencies": {
     "@lucide/vue": "^1.26.0",

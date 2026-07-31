@@ -163,6 +163,7 @@ def build_team() -> Team:
         add_history_to_context=True,
         store_history_messages=True,
         num_history_messages=settings.agent_history_messages,
+        stream_member_events=False,
     )
 
 

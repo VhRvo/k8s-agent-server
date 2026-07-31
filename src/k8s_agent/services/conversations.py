@@ -11,10 +11,17 @@ from k8s_agent.core.config import settings
 logger = logging.getLogger(__name__)
 
 TITLE_MAX = 30
+CONCISE_MODE_MARKER = "\n\n[简洁模式]\n"
 
 
-def derive_title(text: str) -> str:
-    cleaned = (text or "").strip().replace("\n", " ")
+def visible_user_message(text: str | None) -> str:
+    content = text or ""
+    marker_offset = content.rfind(CONCISE_MODE_MARKER)
+    return content[:marker_offset] if marker_offset >= 0 else content
+
+
+def derive_title(text: str | None) -> str:
+    cleaned = visible_user_message(text).strip().replace("\n", " ")
     if not cleaned:
         return "新对话"
     return cleaned[:TITLE_MAX]
@@ -58,7 +65,10 @@ def serialize_session_messages(session: AgentSession) -> dict:
     except Exception:
         history = []
     for m in history or []:
-        messages.append({"role": m.role, "content": _coerce_content(getattr(m, "content", None))})
+        content = _coerce_content(getattr(m, "content", None))
+        if m.role == "user":
+            content = visible_user_message(content)
+        messages.append({"role": m.role, "content": content})
     return {
         "id": session.session_id,
         "title": _session_title(session),

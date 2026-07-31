@@ -7,13 +7,24 @@ import {
   ref,
   watch,
 } from "vue";
+import {
+  buildOutgoingPrompt,
+  hasConcisePrompt,
+  normalizeConversationMessages,
+  visibleConversationTitle,
+  visibleMessageLimit,
+  visibleUserMessage,
+} from "../utils/messages";
 
 const API_BASE = (
   import.meta.env.VITE_API_BASE_URL || "/backend"
 ).replace(/\/$/, "");
 
+  const MAX_UNFILTERED_CONCISE_STREAM_LENGTH = 5000;
   const RESPONSE_COLLAPSE_THRESHOLD = 520;
   const RESPONSE_SUMMARY_LENGTH = 220;
+  const SCROLL_BOTTOM_THRESHOLD = 64;
+  const CONCISE_MODE_STORAGE_KEY = "k8s-console:concise-mode";
 
   const FALLBACK_AGENTS = [
     {
@@ -155,6 +166,14 @@ const API_BASE = (
 
   function createSessionId() {
     return globalThis.crypto?.randomUUID?.() || `session-${Date.now()}`;
+  }
+
+  function initialConciseMode() {
+    try {
+      return globalThis.localStorage?.getItem(CONCISE_MODE_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
   }
 
   function createThread(workspaceId, agentId) {
@@ -331,6 +350,8 @@ const API_BASE = (
       const expandedInspectionId = ref("");
       const messagesPanel = ref(null);
       const messageInput = ref(null);
+      const isFollowingOutput = ref(true);
+      const conciseMode = ref(initialConciseMode());
       const toast = reactive({ message: "", type: "error" });
 
       let healthTimer = null;
@@ -380,6 +401,9 @@ const API_BASE = (
       const composerPlaceholder = computed(
         () => `向${activeAgent.value.name}提问...`
       );
+      const draftMaxLength = computed(() =>
+        visibleMessageLimit(conciseMode.value)
+      );
 
       const filteredConversations = computed(() => {
         const query = conversationQuery.value.toLowerCase();
@@ -409,11 +433,15 @@ const API_BASE = (
             thread?.requestActive && !thread.queuedRequest;
           return (
             Boolean(draft.value.trim()) &&
+            draft.value.length <= draftMaxLength.value &&
             Boolean(thread) &&
             (!thread.isStreaming || canQueue) &&
             isAgentAvailable(activeAgent.value)
           );
         }
+      );
+      const showScrollToLatest = computed(
+        () => Boolean(messages.value.length) && !isFollowingOutput.value
       );
 
       const inspectionStats = computed(() => ({
@@ -526,12 +554,42 @@ const API_BASE = (
         }
       }
 
-      function scrollToBottom() {
+      function isNearMessagesBottom(panel) {
+        return (
+          panel.scrollHeight - panel.scrollTop - panel.clientHeight <=
+          SCROLL_BOTTOM_THRESHOLD
+        );
+      }
+
+      function handleMessagesScroll() {
+        const panel = messagesPanel.value;
+        if (!panel) return;
+        isFollowingOutput.value = isNearMessagesBottom(panel);
+      }
+
+      function scrollToBottom({ force = false, smooth = false } = {}) {
+        const panel = messagesPanel.value;
+        if (
+          !force &&
+          panel &&
+          !isFollowingOutput.value
+        ) {
+          return;
+        }
+
+        if (force) isFollowingOutput.value = true;
         nextTick(() => {
-          if (messagesPanel.value) {
-            messagesPanel.value.scrollTop = messagesPanel.value.scrollHeight;
-          }
+          const currentPanel = messagesPanel.value;
+          if (!currentPanel || (!force && !isFollowingOutput.value)) return;
+          currentPanel.scrollTo({
+            top: currentPanel.scrollHeight,
+            behavior: smooth ? "smooth" : "auto",
+          });
         });
+      }
+
+      function scrollToLatest() {
+        scrollToBottom({ force: true, smooth: !isStreaming.value });
       }
 
       function focusComposer() {
@@ -555,6 +613,7 @@ const API_BASE = (
         sharedContext.value = [];
         activeAgentId.value = "team";
         contextOpen.value = false;
+        isFollowingOutput.value = true;
       }
 
       function newChat() {
@@ -577,7 +636,7 @@ const API_BASE = (
         activeView.value = "chat";
         sidebarOpen.value = false;
         resizeComposer();
-        scrollToBottom();
+        scrollToBottom({ force: true });
         focusComposer();
       }
 
@@ -586,7 +645,10 @@ const API_BASE = (
         try {
           const data = await requestJson("/api/conversations");
           conversations.value = Array.isArray(data.conversations)
-            ? data.conversations
+            ? data.conversations.map((conversation) => ({
+                ...conversation,
+                title: visibleConversationTitle(conversation.title),
+              }))
             : [];
         } catch (error) {
           conversations.value = [];
@@ -606,19 +668,24 @@ const API_BASE = (
         sidebarOpen.value = false;
         resetWorkspace(id);
         try {
-          const data = await requestJson(`/api/conversations/${encodeURIComponent(id)}`);
-          currentTitle.value = data.title || "新对话";
-          threads.team.messages = (data.messages || []).map((message, index) => ({
-            id: `${id}-${index}`,
-            role: message.role === "user" ? "user" : "assistant",
-            agentId: "team",
-            content: String(message.content || ""),
-            time: "",
-            pending: false,
-            error: false,
-            stopped: false,
-          }));
-          scrollToBottom();
+          const data = await requestJson(
+            `/api/conversations/${encodeURIComponent(id)}`
+          );
+          currentTitle.value = visibleConversationTitle(data.title);
+          threads.team.messages = normalizeConversationMessages(data.messages).map(
+            (message, index) => ({
+              id: `${id}-${index}`,
+              role: message.role === "user" ? "user" : "assistant",
+              agentId: "team",
+              content: String(message.content || ""),
+              time: "",
+              pending: false,
+              error: false,
+              stopped: false,
+              conciseMode: Boolean(message.conciseMode),
+            })
+          );
+          scrollToBottom({ force: true });
         } catch (error) {
           showToast(error.message);
           newChat();
@@ -647,6 +714,83 @@ const API_BASE = (
       function useSuggestion(prompt) {
         draft.value = prompt;
         focusComposer();
+      }
+
+      function copyWithFallback(text) {
+        const previousFocus = document.activeElement;
+        const input = document.createElement("textarea");
+        input.value = text;
+        input.setAttribute("readonly", "");
+        input.style.position = "fixed";
+        input.style.top = "-1000px";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        let copied = false;
+        try {
+          input.focus();
+          input.select();
+          input.setSelectionRange(0, input.value.length);
+          copied = document.execCommand("copy");
+        } finally {
+          input.remove();
+          if (typeof previousFocus?.focus === "function") {
+            try {
+              previousFocus.focus({ preventScroll: true });
+            } catch {
+              try {
+                previousFocus.focus();
+              } catch {
+                // Copy succeeded even if the browser cannot restore focus.
+              }
+            }
+          }
+        }
+        if (!copied) throw new Error("浏览器拒绝了复制操作");
+      }
+
+      async function copyMessage(message) {
+        const content = String(message?.content || "");
+        if (!content) return;
+
+        try {
+          if (globalThis.navigator?.clipboard?.writeText) {
+            try {
+              await globalThis.navigator.clipboard.writeText(content);
+            } catch {
+              copyWithFallback(content);
+            }
+          } else {
+            copyWithFallback(content);
+          }
+          showToast(
+            message.role === "user" ? "输入已复制" : "回复已复制",
+            "success"
+          );
+        } catch {
+          showToast("复制失败，请手动选择文本");
+        }
+      }
+
+      function editMessage(message) {
+        if (message?.role !== "user") return;
+        const content = visibleUserMessage(message.content);
+        const currentDraft = draft.value.trim();
+        if (
+          currentDraft &&
+          currentDraft !== content.trim() &&
+          !globalThis.confirm("输入框中已有未发送内容，是否替换？")
+        ) {
+          return;
+        }
+
+        draft.value = content;
+        resizeComposer();
+        focusComposer();
+        if (content.length > draftMaxLength.value) {
+          showToast(`请将输入缩短至 ${draftMaxLength.value} 字以内`);
+        } else {
+          showToast("已放回输入框，修改后可重新发送", "success");
+        }
       }
 
       function contextExcerpt(content) {
@@ -714,7 +858,12 @@ const API_BASE = (
         }).format(new Date());
       }
 
-      function applyStreamEvent(eventText, assistantMessage) {
+      function applyStreamEvent(
+        eventText,
+        assistantMessage,
+        streamState,
+        renderContent
+      ) {
         const data = eventText
           .split(/\r?\n/)
           .filter((line) => line.startsWith("data:"))
@@ -727,12 +876,69 @@ const API_BASE = (
         const payload = JSON.parse(data);
         if (payload.error) throw new Error(payload.error);
         if (payload.content) {
-          assistantMessage.content += payload.content;
-          if (activeAgentId.value === assistantMessage.agentId) {
+          streamState.content += String(payload.content);
+          if (renderContent) {
+            assistantMessage.content = streamState.content;
+          }
+          if (
+            renderContent &&
+            activeAgentId.value === assistantMessage.agentId
+          ) {
             scrollToBottom();
           }
         }
         return false;
+      }
+
+      function latestAssistantForPrompt(messages, outgoingPrompt) {
+        const source = Array.isArray(messages) ? messages : [];
+        let userIndex = -1;
+        for (let index = source.length - 1; index >= 0; index -= 1) {
+          const message = source[index] || {};
+          if (
+            message.role === "user" &&
+            (String(message.content || "").trim() === outgoingPrompt.trim() ||
+              visibleUserMessage(message.content).trim() ===
+                visibleUserMessage(outgoingPrompt).trim())
+          ) {
+            userIndex = index;
+            break;
+          }
+        }
+        if (userIndex < 0 || !hasConcisePrompt(source[userIndex]?.content)) {
+          return "";
+        }
+
+        let finalContent = "";
+        for (let index = userIndex + 1; index < source.length; index += 1) {
+          if (source[index]?.role === "user") break;
+          if (String(source[index]?.content || "").trim()) {
+            finalContent = String(source[index].content);
+          }
+        }
+        return finalContent;
+      }
+
+      async function loadCanonicalConciseResponse(sessionId, outgoingPrompt) {
+        const retryDelays = [0, 60, 160];
+        for (const delay of retryDelays) {
+          if (delay) {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+          try {
+            const data = await requestJson(
+              `/api/conversations/${encodeURIComponent(sessionId)}`
+            );
+            const content = latestAssistantForPrompt(
+              data.messages,
+              outgoingPrompt
+            );
+            if (content) return content;
+          } catch {
+            // The persisted final answer can lag the stream by a few milliseconds.
+          }
+        }
+        return "";
       }
 
       function stopAgent(agentId = activeAgentId.value) {
@@ -761,6 +967,7 @@ const API_BASE = (
           text,
           assistantMessage,
           context,
+          conciseMode: requestConciseMode,
         } = request;
         const thread = threads[agentId];
         if (!thread || isDisposed) return;
@@ -796,6 +1003,7 @@ const API_BASE = (
           const decoder = new TextDecoder();
           let buffer = "";
           let receivedDoneEvent = false;
+          const streamState = { content: "" };
 
           while (!receivedDoneEvent) {
             const { done, value } = await reader.read();
@@ -804,7 +1012,12 @@ const API_BASE = (
             buffer = events.pop() || "";
 
             for (const event of events) {
-              receivedDoneEvent = applyStreamEvent(event, assistantMessage);
+              receivedDoneEvent = applyStreamEvent(
+                event,
+                assistantMessage,
+                streamState,
+                !requestConciseMode
+              );
               if (receivedDoneEvent) break;
             }
 
@@ -816,7 +1029,30 @@ const API_BASE = (
           }
 
           if (!receivedDoneEvent && buffer.trim()) {
-            applyStreamEvent(buffer, assistantMessage);
+            applyStreamEvent(
+              buffer,
+              assistantMessage,
+              streamState,
+              !requestConciseMode
+            );
+          }
+          if (requestConciseMode) {
+            let finalContent = streamState.content;
+            if (agentId === "team") {
+              const persistedContent = await loadCanonicalConciseResponse(
+                thread.sessionId,
+                text
+              );
+              if (persistedContent) {
+                finalContent = persistedContent;
+              } else if (
+                Array.from(finalContent).length >
+                MAX_UNFILTERED_CONCISE_STREAM_LENGTH
+              ) {
+                throw new Error("未能从回复中提取最终结论，请重试");
+              }
+            }
+            assistantMessage.content = String(finalContent || "").trim();
           }
           if (!assistantMessage.content) {
             assistantMessage.content = "未收到回复内容，请稍后重试。";
@@ -834,6 +1070,9 @@ const API_BASE = (
             streamControllers.delete(agentId);
           }
           assistantMessage.pending = false;
+          if (activeAgentId.value === agentId) {
+            scrollToBottom();
+          }
           thread.requestActive = false;
           thread.hasUnread = activeAgentId.value !== agentId;
 
@@ -858,6 +1097,7 @@ const API_BASE = (
           thread?.requestActive && !thread.queuedRequest;
         if (
           !text ||
+          text.length > draftMaxLength.value ||
           !thread ||
           (thread.isStreaming && !canQueue) ||
           !isAgentAvailable(agentId)
@@ -874,6 +1114,7 @@ const API_BASE = (
           pending: true,
           error: false,
           stopped: false,
+          conciseMode: conciseMode.value,
         });
 
         thread.messages.push(
@@ -896,12 +1137,13 @@ const API_BASE = (
         thread.isStreaming = true;
         thread.hasUnread = false;
         resizeComposer();
-        scrollToBottom();
+        scrollToBottom({ force: !thread.requestActive });
 
         const request = {
           agentId,
-          text,
+          text: buildOutgoingPrompt(text, conciseMode.value),
           assistantMessage,
+          conciseMode: conciseMode.value,
           context:
             agentId === "team"
               ? []
@@ -1023,6 +1265,19 @@ const API_BASE = (
       }
 
       watch(draft, resizeComposer);
+      watch(conciseMode, (enabled) => {
+        try {
+          globalThis.localStorage?.setItem(
+            CONCISE_MODE_STORAGE_KEY,
+            String(enabled)
+          );
+        } catch {
+          // The preference still works for this page when storage is unavailable.
+        }
+        if (enabled && draft.value.length > draftMaxLength.value) {
+          showToast(`简洁模式下输入最多 ${draftMaxLength.value} 字`);
+        }
+      });
 
       onMounted(() => {
         loadAgents();
@@ -1058,9 +1313,11 @@ const API_BASE = (
         canSend,
         checkHealth,
         clearContext,
+        conciseMode,
         composerPlaceholder,
         contextExcerpt,
         contextOpen,
+        copyMessage,
         conversationCount,
         conversationQuery,
         conversations,
@@ -1068,11 +1325,14 @@ const API_BASE = (
         currentTitle,
         deleteConversation,
         draft,
+        draftMaxLength,
+        editMessage,
         expandedInspectionId,
         filteredConversations,
         formatConversationTime,
         formatDateTime,
         handleComposerKeydown,
+        handleMessagesScroll,
         handoffMessage,
         hideAgentHint,
         inspectionStats,
@@ -1102,9 +1362,11 @@ const API_BASE = (
         serviceStatusText,
         sharedContext,
         showAgentHint,
+        showScrollToLatest,
         sidebarOpen,
         startingInspection,
         stopAgent,
+        scrollToLatest,
         switchAgent,
         switchView,
         threadHasUnread,

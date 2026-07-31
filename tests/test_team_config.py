@@ -16,6 +16,10 @@ def test_team_has_three_members():
     assert len(team.members) == 3
 
 
+def test_team_does_not_stream_member_events():
+    assert team.stream_member_events is False
+
+
 def test_member_tool_counts():
     counts = {len(m.tools) for m in team.members}
     assert counts == {8, 2, 5}

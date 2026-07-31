@@ -20,6 +20,14 @@ def test_derive_title_empty():
     assert conversations.derive_title(None) == "新对话"
 
 
+def test_derive_title_hides_concise_mode_instruction():
+    message = (
+        "检查异常 Pod\n\n[简洁模式]\n"
+        "仅针对本次回答：请只输出结论和必要步骤。"
+    )
+    assert conversations.derive_title(message) == "检查异常 Pod"
+
+
 def test_serialize_session_summary():
     s = AgentSession(
         session_id="s1",
@@ -58,6 +66,15 @@ def test_serialize_session_messages():
     assert out["title"] == "T"
     assert [m["role"] for m in out["messages"]] == ["user", "assistant"]
     assert out["messages"][0]["content"] == "hi"
+
+
+def test_serialize_session_messages_hides_concise_mode_instruction():
+    message = "检查异常 Pod\n\n[简洁模式]\n请保持简洁。"
+    session = _make_session([("user", message), ("assistant", "发现 1 个异常 Pod")])
+
+    out = conversations.serialize_session_messages(session)
+
+    assert out["messages"][0]["content"] == "检查异常 Pod"
 
 
 def test_list_conversations_maps_and_sorts(monkeypatch):

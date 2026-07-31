@@ -16,20 +16,25 @@ const {
   canSend,
   checkHealth,
   clearContext,
+  conciseMode,
   composerPlaceholder,
   contextExcerpt,
   contextOpen,
+  copyMessage,
   conversationCount,
   conversationQuery,
   currentSessionId,
   currentTitle,
   deleteConversation,
   draft,
+  draftMaxLength,
+  editMessage,
   expandedInspectionId,
   filteredConversations,
   formatConversationTime,
   formatDateTime,
   handleComposerKeydown,
+  handleMessagesScroll,
   handoffMessage,
   hideAgentHint,
   inspectionStats,
@@ -59,9 +64,11 @@ const {
   serviceStatusText,
   sharedContext,
   showAgentHint,
+  showScrollToLatest,
   sidebarOpen,
   startingInspection,
   stopAgent,
+  scrollToLatest,
   switchAgent,
   switchView,
   threadHasUnread,
@@ -306,7 +313,11 @@ const {
 
           <div class="chat-stage">
             <div class="chat-column">
-              <div ref="messagesPanel" class="messages-panel">
+              <div
+                ref="messagesPanel"
+                class="messages-panel"
+                @scroll.passive="handleMessagesScroll"
+              >
                 <div class="messages-content">
                   <div v-if="loadingConversation" class="conversation-loading">
                     <span></span><span></span><span></span>
@@ -363,6 +374,11 @@ const {
                         >
                           <span></span><span></span><span></span>
                         </div>
+                        <div
+                          v-else-if="message.pending"
+                          class="streaming-text"
+                          v-text="message.content"
+                        ></div>
                         <template v-else-if="shouldCollapseResponse(message)">
                           <section class="response-summary">
                             <span>总结</span>
@@ -391,31 +407,63 @@ const {
                           已停止生成
                         </div>
                         <div
-                          v-if="message.role === 'assistant' && !message.pending && !message.error"
+                          v-if="
+                            message.content &&
+                            (message.role === 'user' || !message.pending)
+                          "
                           class="message-actions"
                         >
-                          <button type="button" @click="addToContext(message)">
-                            <app-icon name="Pin"></app-icon>
-                            固定证据
+                          <button
+                            type="button"
+                            :title="
+                              message.role === 'user'
+                                ? '复制输入'
+                                : '复制完整回复'
+                            "
+                            @click="copyMessage(message)"
+                          >
+                            <app-icon name="Copy"></app-icon>
+                            复制
                           </button>
                           <button
-                            v-if="message.agentId !== 'analyst'"
+                            v-if="message.role === 'user'"
                             type="button"
-                            @click="handoffMessage(message, 'analyst')"
+                            title="放回输入框继续编辑"
+                            @click="editMessage(message)"
                           >
-                            <app-icon name="ArrowRight"></app-icon>
-                            交给分析师
+                            <app-icon name="Pencil"></app-icon>
+                            重新编辑
                           </button>
-                          <button
-                            v-if="message.agentId !== 'operator'"
-                            type="button"
-                            :disabled="!isAgentAvailable('operator')"
-                            :title="agentAvailabilityNote('operator')"
-                            @click="handoffMessage(message, 'operator')"
+                          <template
+                            v-if="
+                              message.role === 'assistant' &&
+                              !message.pending &&
+                              !message.error
+                            "
                           >
-                            <app-icon name="ListChecks"></app-icon>
-                            操作员规划中
-                          </button>
+                            <button type="button" @click="addToContext(message)">
+                              <app-icon name="Pin"></app-icon>
+                              固定证据
+                            </button>
+                            <button
+                              v-if="message.agentId !== 'analyst'"
+                              type="button"
+                              @click="handoffMessage(message, 'analyst')"
+                            >
+                              <app-icon name="ArrowRight"></app-icon>
+                              交给分析师
+                            </button>
+                            <button
+                              v-if="message.agentId !== 'operator'"
+                              type="button"
+                              :disabled="!isAgentAvailable('operator')"
+                              :title="agentAvailabilityNote('operator')"
+                              @click="handoffMessage(message, 'operator')"
+                            >
+                              <app-icon name="ListChecks"></app-icon>
+                              操作员规划中
+                            </button>
+                          </template>
                         </div>
                       </div>
                     </article>
@@ -424,16 +472,49 @@ const {
               </div>
 
               <div class="composer-area">
+                <transition name="scroll-latest">
+                  <button
+                    v-if="showScrollToLatest"
+                    class="scroll-to-latest"
+                    type="button"
+                    title="回到最新消息"
+                    aria-label="回到最新消息并继续跟随输出"
+                    @click="scrollToLatest"
+                  >
+                    <app-icon name="ChevronDown"></app-icon>
+                    <span>回到最新</span>
+                  </button>
+                </transition>
                 <div v-if="activeAgentId === 'operator'" class="operator-safety">
                   <app-icon name="ShieldCheck"></app-icon>
                   <span><strong>方案模式</strong> 不会执行任何集群变更</span>
+                </div>
+                <div class="composer-options">
+                  <label class="concise-switch" :class="{ active: conciseMode }">
+                    <input
+                      v-model="conciseMode"
+                      type="checkbox"
+                      role="switch"
+                      :aria-checked="conciseMode"
+                      aria-label="简洁模式"
+                    >
+                    <span class="switch-track" aria-hidden="true">
+                      <span></span>
+                    </span>
+                    <span class="switch-copy">
+                      <strong>简洁模式</strong>
+                      <small>
+                        {{ conciseMode ? '已开启 · 优先简短回答' : '已关闭' }}
+                      </small>
+                    </span>
+                  </label>
                 </div>
                 <form class="composer" @submit.prevent="sendMessage">
                   <textarea
                     ref="messageInput"
                     v-model="draft"
                     rows="1"
-                    maxlength="4000"
+                    :maxlength="draftMaxLength"
                     :placeholder="composerPlaceholder"
                     aria-label="消息"
                     :aria-busy="isStreaming"
@@ -465,7 +546,7 @@ const {
                   <span>
                     {{ isStreaming ? `${activeAgent.name}正在处理` : activeAgent.permission }}
                   </span>
-                  <span>{{ draft.length }} / 4000</span>
+                  <span>{{ draft.length }} / {{ draftMaxLength }}</span>
                 </div>
               </div>
             </div>

@@ -21,6 +21,8 @@ async def stream_agent_chat(
     session_id: str,
     context: list[str],
 ) -> AsyncGenerator[str, None]:
+    from agno.run.agent import RunContentEvent
+
     agent = direct_agents[agent_id]
     try:
         async for response in agent.arun(
@@ -29,8 +31,8 @@ async def stream_agent_chat(
             user_id=f"{settings.agent_user_id}:{agent_id}",
             stream=True,
         ):
-            if response.content:
-                yield response.content
+            if isinstance(response, RunContentEvent) and response.content:
+                yield str(response.content)
     except Exception as exc:
         logger.error("Agent 对话失败 agent_id=%s: %s", agent_id, exc)
         yield f"\n\n[错误: {exc}]"

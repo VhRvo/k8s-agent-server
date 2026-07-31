@@ -5,6 +5,8 @@ logger = logging.getLogger(__name__)
 
 
 async def stream_chat(message: str, session_id: str) -> AsyncGenerator[str, None]:
+    from agno.run.team import RunContentEvent
+
     from k8s_agent.team import team
     from k8s_agent.core.config import settings
 
@@ -15,8 +17,8 @@ async def stream_chat(message: str, session_id: str) -> AsyncGenerator[str, None
             user_id=settings.agent_user_id,
             stream=True,
         ):
-            if response.content:
-                yield response.content
+            if isinstance(response, RunContentEvent) and response.content:
+                yield str(response.content)
     except Exception as e:
         logger.error("对话失败: %s", e)
         yield f"\n\n[错误: {e}]"
